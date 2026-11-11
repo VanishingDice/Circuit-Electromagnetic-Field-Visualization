@@ -8,6 +8,7 @@
  * 采样直接复用 FieldSolver 的 eField / bField / phi，和主视图是同一份物理。
  */
 import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { MU0 } from './field.js';
 
 const W2M = 0.01;
@@ -31,6 +32,11 @@ const DIV = [
   [0.0, [0.18, 0.36, 0.72]], [0.3, [0.36, 0.58, 0.82]], [0.5, [0.80, 0.80, 0.80]],
   [0.7, [0.86, 0.56, 0.40]], [1.0, [0.78, 0.20, 0.24]],
 ];
+
+/** 立体箭头用的调色（和二维热图同一套 TURBO） */
+function turbo3(t) {
+  return ramp(TURBO, Math.min(1, Math.max(0, t)));
+}
 
 function ramp(stops, t) {
   t = Math.min(1, Math.max(0, t));
@@ -100,6 +106,8 @@ export class SliceTool {
     this._timer = null;
 
     this.state = { cx: 0, cy: 0, cz: 0, yaw: 0, pitch: 90, size: 3.4, field: 'S', visible: false };
+    this.mode3d = false;     // 窗口是否显示「立体视图」
+    this._paintTick = 0;
 
     this.group = new THREE.Group();
     this.group.visible = false;
@@ -267,6 +275,11 @@ export class SliceTool {
       data[k * 4 + 2] = c[2] * 255;
       data[k * 4 + 3] = 255;
     }
+    if (this.mode3d) {
+      // 立体视图里的平面用同一份尺寸；箭头每帧按当前截面重新采样
+      this.update3D();
+    }
+
     this.tex.dispose();
     this.tex = new THREE.DataTexture(data, N, N, THREE.RGBAFormat);
     this.tex.colorSpace = THREE.SRGBColorSpace;
@@ -419,6 +432,11 @@ export class SliceTool {
       }
     }
 
+    this._paintTick++;      // 贴图内容变了，立体视图要重新上传
+    this._texVals = vals;
+    this._texN = N;
+    this._texNorm = this.norm;
+    if (this.mode3d) this.update3D();   // 窗口图更新后同步立体视图
     this.dom.progressWrap.classList.add('hidden');
     const f = FIELDS[this.state.field];
     const stops = [0, 0.25, 0.5, 0.75, 1].map((t) => {
@@ -551,6 +569,7 @@ export class SliceTool {
       this.syncInputs();
       this.update();
     }));
+    if (d.mode3dBtn) d.mode3dBtn.addEventListener('click', () => this.setMode3D(!this.mode3d));
     d.wireBtn.addEventListener('click', () => this.attachToWire());
     d.popBtn.addEventListener('click', () => this.openPopup());
     d.closeBtn.addEventListener('click', () => this.show(false));
@@ -571,6 +590,234 @@ export class SliceTool {
       d.win.style.right = 'auto';
     });
     d.head.addEventListener('pointerup', () => { drag = null; });
+  }
+
+  /* ---------------- 立体视图：可旋转的平面 + 立体箭头 ---------------- */
+
+  /** 首次进入立体模式时才创建 WebGL 上下文，避免页面多开一个 GL 上下文 */
+  _init3D() {
+    if (this.gl3) return;
+    const canvas = this.dom.canvas3;
+    if (!canvas) return;
+
+    this.gl3 = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true });
+    this.gl3.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+    this.gl3.setClearColor(0x05070c, 1);
+
+    this.scene3 = new THREE.Scene();
+    this.cam3 = new THREE.PerspectiveCamera(42, 1, 0.01, 20000);
+    this.cam3.position.set(1.1, 0.9, 1.4);
+    this.ctrl3 = new OrbitControls(this.cam3, canvas);
+    this.ctrl3.enableDamping = true;
+    this.ctrl3.dampingFactor = 0.09;
+    this.ctrl3.minDistance = 0.05;
+    this.ctrl3.maxDistance = 80;
+    this.ctrl3.zoomSpeed = 0.9;
+
+    // 平面贴图：用窗口里那组数值直接建 DataTexture（比抓画布稳，不受 CSS 拉伸影响）
+    this.tex3 = new THREE.DataTexture(new Uint8Array([20, 24, 32, 255]), 1, 1, THREE.RGBAFormat);
+    this.tex3.colorSpace = THREE.SRGBColorSpace;
+    this.tex3.needsUpdate = true;
+    this.tex3N = 1;
+    this.mat3 = new THREE.MeshBasicMaterial({
+      map: this.tex3, side: THREE.DoubleSide, transparent: true, opacity: 0.97,
+    });
+    this.plane3 = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), this.mat3);
+    this.scene3.add(this.plane3);
+
+    // 边框
+    const bg = new THREE.BufferGeometry().setFromPoints([
+      new THREE.Vector3(-0.5, -0.5, 0), new THREE.Vector3(0.5, -0.5, 0),
+      new THREE.Vector3(0.5, 0.5, 0), new THREE.Vector3(-0.5, 0.5, 0),
+      new THREE.Vector3(-0.5, -0.5, 0),
+    ]);
+    this.border3 = new THREE.Line(bg, new THREE.LineBasicMaterial({ color: 0x7ee0ff, transparent: true, opacity: 0.8 }));
+    this.scene3.add(this.border3);
+
+    // 法向指示（一小段箭杆，方便看出「纸面朝哪」）
+    const ng = new THREE.BufferGeometry().setFromPoints([
+      new THREE.Vector3(0, 0, 0), new THREE.Vector3(0, 0, 0.5),
+    ]);
+    this.normal3 = new THREE.Line(ng, new THREE.LineBasicMaterial({ color: 0x66ffcc, transparent: true, opacity: 0.55 }));
+    this.scene3.add(this.normal3);
+
+    this.arrGroup = new THREE.Group();
+    this.scene3.add(this.arrGroup);
+
+    this.geo3 = new THREE.ConeGeometry(0.42, 1, 10);
+    this._lastTick = -1;
+
+    const loop = () => {
+      if (!this.mode3d) return;
+      this._raf3 = requestAnimationFrame(loop);
+      this.ctrl3.update();
+      this._lastTick = this._paintTick;
+      const c = this.dom.canvas3;
+      const w = c.clientWidth | 0, h = c.clientHeight | 0;
+      if (w > 0 && h > 0 && (this.gl3.domElement.width !== w * this.gl3.getPixelRatio() || !this._sized3)) {
+        this.gl3.setSize(w, h, false);
+        this.cam3.aspect = w / h;
+        this.cam3.updateProjectionMatrix();
+        this._sized3 = true;
+      }
+      this.gl3.render(this.scene3, this.cam3);
+    };
+    this._loop3 = loop;
+  }
+
+  /** 在截面上取一个三维矢量 */
+  _vecAt(worldPoint) {
+    const solver = this.solver;
+    if (!solver || !solver.n) return null;
+    const px = worldPoint[0] * 0.01, py = worldPoint[1] * 0.01, pz = worldPoint[2] * 0.01;
+    const E = this._e || (this._e = [0, 0, 0]);
+    const B = this._b || (this._b = [0, 0, 0]);
+    if (this.state.field === 'phi') return null;
+    solver.eField(px, py, pz, E);
+    solver.bField(px, py, pz, B);
+    if (this.state.field === 'E') return [E[0], E[1], E[2]];
+    if (this.state.field === 'B') return [B[0], B[1], B[2]];
+    return [
+      (E[1] * B[2] - E[2] * B[1]) / MU0,
+      (E[2] * B[0] - E[0] * B[2]) / MU0,
+      (E[0] * B[1] - E[1] * B[0]) / MU0,
+    ];
+  }
+
+  /** 刷新立体视图：平面尺寸、贴图、箭头 */
+  update3D() {
+    if (!this.mode3d) return;
+    this._init3D();
+    if (!this.gl3 || !this.solver) return;
+
+    // 贴图
+    const N = this._texN || 0;
+    if (N > 0 && this._texVals && this._texNorm) {
+      if (this.tex3N !== N) {
+        this.tex3.dispose();
+        this.tex3 = new THREE.DataTexture(new Uint8Array(N * N * 4), N, N, THREE.RGBAFormat);
+        this.tex3.colorSpace = THREE.SRGBColorSpace;
+        this.tex3.magFilter = THREE.LinearFilter;
+        this.tex3.minFilter = THREE.LinearFilter;
+        this.mat3.map = this.tex3;
+        this.mat3.needsUpdate = true;
+        this.tex3N = N;
+        this._lastTick = -1;
+      }
+      const vals = this._texVals;
+      const norm = this._texNorm;
+      const data = this.tex3.image.data;
+      for (let k = 0; k < N * N; k++) {
+        const c = norm.color(vals[k]);
+        data[k * 4] = c[0] * 255;
+        data[k * 4 + 1] = c[1] * 255;
+        data[k * 4 + 2] = c[2] * 255;
+        data[k * 4 + 3] = 255;
+      }
+      this.tex3.needsUpdate = true;
+    }
+
+    const S = this.state.size;
+    this.plane3.scale.set(S, S, 1);
+    this.border3.scale.set(S, S, 1);
+    this.normal3.scale.set(S * 0.35, S * 0.35, S * 0.35);
+
+    // 相机只在第一次进入时摆位，之后交给用户
+    if (!this._camInit3) {
+      this.cam3.position.set(S * 1.0, S * 0.75, S * 1.15);
+      this.ctrl3.target.set(0, 0, 0);
+      this.ctrl3.update();
+      this._camInit3 = true;
+    }
+
+    // 箭头
+    while (this.arrGroup.children.length) {
+      const m = this.arrGroup.children.pop();
+      if (m.isInstancedMesh) {
+        m.dispose();
+        if (m.material) m.material.dispose();
+      }
+    }
+    if (this.state.field === 'phi') return;
+
+    const plane = this.plane;
+    const NA = 13;
+    const step = S / NA;
+    const items = [];
+    for (let j = 0; j < NA; j++) {
+      for (let i = 0; i < NA; i++) {
+        const u = ((i + 0.5) / NA - 0.5) * S;
+        const v = ((j + 0.5) / NA - 0.5) * S;
+        const p = [
+          plane.center[0] + plane.e1[0] * u + plane.e2[0] * v,
+          plane.center[1] + plane.e1[1] * u + plane.e2[1] * v,
+          plane.center[2] + plane.e1[2] * u + plane.e2[2] * v,
+        ];
+        const w = this._vecAt(p);
+        if (!w) continue;
+        const m = Math.hypot(w[0], w[1], w[2]);
+        if (!(m > 0) || !isFinite(m)) continue;
+        // 换到平面的局部坐标：横向 u、纵向 v、法向 n
+        const a = (w[0] * plane.e1[0] + w[1] * plane.e1[1] + w[2] * plane.e1[2]) / m;
+        const b = (w[0] * plane.e2[0] + w[1] * plane.e2[1] + w[2] * plane.e2[2]) / m;
+        const c = (w[0] * plane.n[0] + w[1] * plane.n[1] + w[2] * plane.n[2]) / m;
+        items.push({ u, v, d: [a, b, c], m });
+      }
+    }
+    if (!items.length) return;
+
+    const mags = items.map((it) => it.m).sort((x, y) => x - y);
+    const l0 = Math.log10(Math.max(mags[0], 1e-30));
+    const l1 = Math.log10(Math.max(mags[mags.length - 1], 1e-29));
+    const span = Math.max(l1 - l0, 1e-6);
+
+    // 注意：InstancedMesh 用 setColorAt 时不要再开 vertexColors，
+    // 否则材质会去找几何体的 color 属性，拿不到就画成黑的
+    const mat = new THREE.MeshBasicMaterial({ color: 0xffffff });
+    const mesh = new THREE.InstancedMesh(this.geo3, mat, items.length);
+    const dummy = new THREE.Object3D();
+    const up = new THREE.Vector3(0, 1, 0);
+    const q = new THREE.Quaternion();
+    const dir = new THREE.Vector3();
+    const col = new THREE.Color();
+    for (let k = 0; k < items.length; k++) {
+      const it = items[k];
+      const t = Math.min(1, Math.max(0, (Math.log10(Math.max(it.m, 1e-30)) - l0) / span));
+      dir.set(it.d[0], it.d[1], it.d[2]);
+      if (dir.lengthSq() < 1e-12) dir.set(0, 0, 1);
+      dir.normalize();
+      q.setFromUnitVectors(up, dir);
+      const L = step * (0.45 + 0.55 * t);
+      dummy.position.set(it.u + it.d[0] * L * 0.5, it.v + it.d[1] * L * 0.5, it.d[2] * L * 0.5);
+      dummy.quaternion.copy(q);
+      dummy.scale.set(L * 0.34, L, L * 0.34);
+      dummy.updateMatrix();
+      mesh.setMatrixAt(k, dummy.matrix);
+      const cc = turbo3(t);
+      col.setRGB(cc[0], cc[1], cc[2], THREE.SRGBColorSpace);
+      mesh.setColorAt(k, col);
+    }
+    mesh.instanceMatrix.needsUpdate = true;
+    if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
+    this.arrGroup.add(mesh);
+    this._camInit3 = true;
+  }
+
+  /** 切换二维 / 立体 */
+  setMode3D(on) {
+    this.mode3d = !!on;
+    if (this.dom.mode3dBtn) this.dom.mode3dBtn.classList.toggle('active', this.mode3d);
+    this.dom.canvas.classList.toggle('hidden', this.mode3d);
+    if (this.dom.canvas3) this.dom.canvas3.classList.toggle('hidden', !this.mode3d);
+    if (this.mode3d) {
+      this._init3D();
+      this.update3D();
+      if (this._loop3) this._loop3();
+    } else if (this._raf3) {
+      cancelAnimationFrame(this._raf3);
+      this._raf3 = null;
+    }
+    if (this.dom.probe) this.dom.probe.classList.toggle('hidden', this.mode3d);
   }
 
   /** 平面中心投影到页面坐标（自检/调试用） */

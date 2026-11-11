@@ -151,12 +151,14 @@
         <div class="sw-head" id="sw-head">
           <span class="sw-title">截面 · <b id="sw-title">|S| 能流</b></span>
           <span class="sw-btns">
+            <button id="sw-mode3d" title="把截面图放到可旋转的立体视图里（平面贴图 + 立体箭头）">立体</button>
             <button id="sw-pop" title="在独立窗口里打开（可拖到另一块屏幕）">独立窗口</button>
             <button id="sw-close" title="关闭">×</button>
           </span>
         </div>
         <div class="sw-canvas">
           <canvas id="sw-canvas" width="256" height="256"></canvas>
+          <canvas id="sw-canvas3" class="hidden"></canvas>
           <div class="sw-progress-wrap hidden" id="sw-progress-wrap">
             <div class="sw-progress" id="sw-progress"></div>
           </div>

@@ -44,6 +44,7 @@ const state = {
 
 const circuit = createDefaultCircuit();
 let forceFrame = true;      // 下一次 rebuild 是否重新取景
+let sliceMode3D = false;    // 截面窗口是否用立体视图（?mode3d=1）
 let solution = null;
 let sceneData = null;
 let lastCount = -1;
@@ -82,6 +83,7 @@ const slice = new SliceTool(scene3d, {
   sizeLabel: $('sw-size-label'),
   field: $('sw-field'), axisButtons: [...document.querySelectorAll('#sw-axis button')],
   wireBtn: $('sw-wire'), popBtn: $('sw-pop'), closeBtn: $('sw-close'), probe: $('sw-probe'),
+  canvas3: $('sw-canvas3'), mode3dBtn: $('sw-mode3d'),
 });
 
 /* ---------------- 求解 + 重建 ---------------- */
@@ -380,6 +382,7 @@ $('btn-slice').addEventListener('click', () => {
   state.sliceOn = !state.sliceOn;
   $('btn-slice').classList.toggle('active', state.sliceOn);
   slice.show(state.sliceOn);
+  if (sliceMode3D) slice.setMode3D(true);
   if (state.sliceOn) {
     slice.setScene({
       solver: sceneData?.solver,
@@ -499,6 +502,7 @@ const qs = new URLSearchParams(location.search);
   if (qs.get('sliceAxis')) state.sliceAxis = qs.get('sliceAxis');
   if (qs.get('analysis') === '1') state.analysisOn = true;
   if (qs.get('slice') === '1') state.sliceOn = true;
+  if (qs.get('mode3d') === '1') { state.sliceOn = true; sliceMode3D = true; }
   // 截取空间的参数
   for (const [k, id, sc] of [['cx', 'sp-cx', 20], ['cy', 'sp-cy', 20], ['cz', 'sp-cz', 20],
                              ['sx', 'sp-sx', 10], ['sy', 'sp-sy', 10], ['sz', 'sp-sz', 10]]) {
@@ -534,9 +538,15 @@ function syncUIFromState() {
 
 syncUIFromState();
 updateLegend();
+if (sliceMode3D) {
+  state.sliceOn = true;
+  $("btn-slice").classList.add("active");
+  slice.show(true);
+}
 scene3d.setGhost(state.interior);
 slicePane.scene.setGhost(state.interior);
 rebuild();
+if (sliceMode3D) slice.setMode3D(true);
 if (state.analysisOn) {
   $('btn-analysis').classList.add('active');
   $('analysis').classList.remove('hidden');
@@ -745,6 +755,25 @@ function runSelfTest() {
       ok(true, '截取空间面板');
     } catch (err) {
       ok(false, '截取空间面板抛错', String(err.message).slice(0, 80));
+    }
+
+    // 9.6 截面窗口的立体视图
+    try {
+      state.sliceOn = true;
+      slice.state.field = "S";      // 前面的切片测试把场留在了 phi，矢量场才有箭头
+      slice.show(true);
+      slice.setMode3D(true);
+      ok(slice.mode3d === true, '立体视图已开启');
+      ok(!slice.dom.canvas3.classList.contains('hidden'), '立体画布可见');
+      ok(slice.dom.canvas.classList.contains('hidden'), '二维画布已隐藏');
+      ok(!!slice.arrGroup && slice.arrGroup.children.length > 0, '立体视图生成了箭头');
+      ok(!!slice.plane3 && slice.plane3.visible, '立体视图有贴图平面');
+      slice.setMode3D(false);
+      ok(slice.dom.canvas3.classList.contains('hidden'), '切回二维后立体画布隐藏');
+      slice.show(false);
+      state.sliceOn = false;
+    } catch (err) {
+      ok(false, '立体视图测试抛错', String(err.message).slice(0, 80));
     }
 
     // 9.65 截面三维交互：合成一个 pointerdown，看是否被拾取

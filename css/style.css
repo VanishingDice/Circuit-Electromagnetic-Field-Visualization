@@ -459,8 +459,9 @@ input[type=range]::-webkit-slider-thumb {
   border: 1px solid var(--line); background: #0f1620; color: #7d8fa6;
 }
 .sw-btns button:hover { color: #bfe9ff; border-color: #2f7dab; }
-.sw-canvas { position: relative; border-radius: 9px; overflow: hidden; background: #05080c; }
-.sw-canvas canvas { display: block; width: 100%; height: auto; aspect-ratio: 1 / 1; }
+.sw-canvas { position: relative; border-radius: 9px; overflow: hidden; background: #05080c; aspect-ratio: 1 / 1; }
+.sw-canvas canvas { display: block; width: 100%; height: 100%; }
+.sw-canvas canvas.hidden { display: none; }
 .sw-res {
   position: absolute; right: 7px; top: 6px;
   font-size: 9.5px; color: rgba(220,235,250,0.55);
@@ -472,6 +473,13 @@ input[type=range]::-webkit-slider-thumb {
 }
 .sw-progress-wrap.hidden { display: none; }
 .sw-progress { height: 100%; width: 0; background: #58c4ff; transition: width 0.05s linear; }
+#sw-canvas3 {
+  width: 100%;
+  height: 100%;
+  display: block;
+  touch-action: none;
+}
+
 .sw-tip {
   margin: 4px 0 2px;
   font-size: 11px;

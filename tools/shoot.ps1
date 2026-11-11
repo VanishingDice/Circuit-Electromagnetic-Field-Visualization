@@ -18,6 +18,7 @@ $shots = @(
   @{ name = "poynting-lines";q = "?field=S&mode=stream&editor=0" },
   @{ name = "analysis";      q = "?field=S&mode=arrows&editor=0&analysis=1&wire=8" },
   @{ name = "slice";         q = "?field=S&mode=stream&editor=0&slice=1&wire=8" },
+  @{ name = "slice-3d";      q = "?field=S&mode=stream&editor=0&slice=1&mode3d=1&circuit=simple" },
   @{ name = "pane-arrows";   q = "?field=S&mode=arrows&density=60" },
   @{ name = "simple-loop";   q = "?circuit=simple&field=S&mode=stream&editor=0" },
   @{ name = "interior";      q = "?circuit=simple&field=S&mode=stream&editor=0&inside=1" },
