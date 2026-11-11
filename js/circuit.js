@@ -55,6 +55,20 @@ export function createDefaultCircuit() {
   return { elements: els, groundHint: [1, 1] };
 }
 
+/**
+ * 最简回路：电源在左端、电阻在右端（中间没有电容电感）。
+ * 用来观察「能量从电源侧出来、绕空间一圈再进电阻」的完整路径。
+ */
+export function createSimpleLoop() {
+  const els = [];
+  const add = (type, a, b, value) => els.push({ id: newId(), type, a, b, value });
+  add('battery', [1, 1], [1, 4], 9);      // 左端，负极在下
+  add('wire', [1, 4], [8, 4]);            // 上边
+  add('resistor', [8, 4], [8, 1], 100);   // 右端
+  add('wire', [8, 1], [1, 1]);            // 下边
+  return { elements: els, groundHint: [1, 1] };
+}
+
 /* ------------------------------------------------------------------ *
  *  拓扑
  * ------------------------------------------------------------------ */

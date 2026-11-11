@@ -1,7 +1,7 @@
 /**
  * app.js —— 把电路编辑器、求解器、三维场景和可视化面板接在一起
  */
-import { createDefaultCircuit, solveCircuit, buildScene, TYPES, newId } from './circuit.js';
+import { createDefaultCircuit, createSimpleLoop, solveCircuit, buildScene, TYPES, newId } from './circuit.js';
 import { METER_PER_UNIT } from './field.js';
 import { Editor2D } from './editor2d.js';
 import { Scene3D } from './scene.js';
@@ -417,6 +417,13 @@ $('help-close').addEventListener('click', () => $('help-modal').classList.add('h
 $('help-modal').addEventListener('click', (e) => {
   if (e.target.id === 'help-modal') $('help-modal').classList.add('hidden');
 });
+$('btn-simple').addEventListener('click', () => {
+  circuit.elements = createSimpleLoop().elements;
+  sel = null;
+  lastCount = -1;
+  rebuild();
+});
+
 $('btn-reset').addEventListener('click', () => {
   const fresh = createDefaultCircuit();
   circuit.elements = fresh.elements;
@@ -494,6 +501,7 @@ const qs = new URLSearchParams(location.search);
     }
   }
   if (qs.get('seeds') === 'uniform') viz.seedMode = 'uniform';
+  if (qs.get('circuit') === 'simple') circuit.elements = createSimpleLoop().elements;
   if (qs.get('inside') === '1') state.interior = true;
   if (qs.get('wire')) state.wireRadius = Math.min(0.14, Math.max(0.01, +qs.get('wire') / 100));
   if (qs.get('editor') === '0') {
@@ -730,6 +738,33 @@ function runSelfTest() {
         ok(!!slice._drag, '截面拖动事件被拾取');
         document.dispatchEvent(new PointerEvent('pointerup', { bubbles: true, pointerId: 1 }));
         ok(!slice._drag, '松手后拖动状态被清除');
+
+        // Shift + 拖动 = 旋转，且平面姿态真的变了
+        const q0 = slice.mesh.quaternion.clone();
+        const yaw0 = slice.state.yaw;
+        target.dispatchEvent(new PointerEvent('pointerdown', {
+          clientX: p.x, clientY: p.y, shiftKey: true, bubbles: true, cancelable: true, pointerId: 2,
+        }));
+        ok(!!slice._drag && slice._drag.rotate === true, 'Shift+拖动进入旋转模式');
+        document.dispatchEvent(new PointerEvent('pointermove', {
+          clientX: p.x + 90, clientY: p.y + 20, shiftKey: true, bubbles: true, pointerId: 2,
+        }));
+        document.dispatchEvent(new PointerEvent('pointerup', { bubbles: true, pointerId: 2 }));
+        const dYaw = Math.abs(slice.state.yaw - yaw0);
+        const dQ = Math.abs(q0.dot(slice.mesh.quaternion));
+        ok(dYaw > 1, `Shift+拖动改变偏航角 (Δ=${dYaw.toFixed(0)}°)`);
+        ok(dQ < 0.9999, '平面姿态四元数确实变了');
+
+        // 右键拖动 = 旋转（旋转后平面位置变了，要重新取一次屏幕坐标）
+        slice.state.yaw = yaw0;
+        slice.update();
+        scene3d.camera.updateMatrixWorld();
+        const p3 = slice.projectedCenter();
+        target.dispatchEvent(new PointerEvent('pointerdown', {
+          clientX: p3.x, clientY: p3.y, button: 2, bubbles: true, cancelable: true, pointerId: 3,
+        }));
+        ok(!!slice._drag && slice._drag.rotate === true, '右键拖动进入旋转模式');
+        document.dispatchEvent(new PointerEvent('pointerup', { bubbles: true, pointerId: 3 }));
       }
       slice.show(false);
       state.sliceOn = false;

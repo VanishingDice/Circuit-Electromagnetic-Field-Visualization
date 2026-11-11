@@ -614,7 +614,8 @@ export class SliceTool {
         cx: this.state.cx, cy: this.state.cy, cz: this.state.cz,
         yaw: this.state.yaw, pitch: this.state.pitch,
         n: this.plane.n, point: hit.point.clone(),
-        rotate: ev.shiftKey,
+        // Shift+左键 或 右键/中键 都算旋转（右键是更直觉的「转动」手势）
+        rotate: ev.shiftKey || ev.ctrlKey || ev.button === 2 || ev.button === 1,
       };
       dom.style.cursor = 'grabbing';
     }, true);
@@ -652,6 +653,10 @@ export class SliceTool {
       this.update();
       if (this.onChange) this.onChange();
     }, true);
+
+    dom.addEventListener('contextmenu', (ev) => {
+      if (this.state.visible && dom.contains(ev.target)) ev.preventDefault();
+    });
 
     const end = () => {
       if (!this._drag) return;
