@@ -10,6 +10,10 @@ import { MU0 } from './field.js';
 const W2M = 0.01;
 const M2W = 100;
 
+// 这些场强以下就当作「零」：否则分位数归一化会把 1e-9 的数值噪音也拉成满色满长度，
+// 看起来就像断路也有能流。
+const ZERO_FLOOR = { E: 1e-3, B: 1e-12, S: 1e-6, phi: 1e-6 };
+
 /* ---------------- 配色 ---------------- */
 const TURBO = [
   [0.02, [0.19, 0.07, 0.23]],
@@ -155,6 +159,7 @@ export class FieldViz {
    */
   update(o) {
     this.dispose();
+    this.zero = false;
     const { solver, bounds, field } = o;
     if (!solver || !solver.n) return;
     if (field === 'phi' && o.mode !== 'slice') o = { ...o, mode: 'slice' };
@@ -203,7 +208,8 @@ export class FieldViz {
         }
       }
     }
-    if (!mags.length) return;
+    if (!mags.length) { this.zero = true; return; }
+    if (Math.max(...mags) < (ZERO_FLOOR[field] ?? 0)) { this.zero = true; return; }
 
     const norm = makeNorm(mags);
     // 砍掉两端：极弱的点方向是噪声，极强的点集中在导体表面会把色标拉爆
@@ -287,7 +293,8 @@ export class FieldViz {
         marks.push({ p: line[i], d: [dx / l, dy / l, dz / l], m: lineMags[i] });
       }
     }
-    if (!mags.length) return;
+    if (!mags.length) { this.zero = true; return; }
+    if (Math.max(...mags) < (ZERO_FLOOR[field] ?? 0)) { this.zero = true; return; }
     const norm = makeNorm(mags);
     for (const { line, lineMags } of allPts) {
       for (let i = 0; i < line.length - 1; i++) {
@@ -429,6 +436,14 @@ export class FieldViz {
         vals[j * N + i] = isFinite(val) ? val : 0;
       }
     }
+
+    // 全零就直接跳过
+    let maxAbs = 0;
+    for (let k = 0; k < vals.length; k++) {
+      const v = Math.abs(vals[k]);
+      if (v > maxAbs) maxAbs = v;
+    }
+    if (maxAbs < (ZERO_FLOOR[field] ?? 0)) { this.zero = true; return; }
 
     // 归一化
     let toColor, levelOf;

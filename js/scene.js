@@ -246,11 +246,14 @@ export class Scene3D {
         const geo = new THREE.BoxGeometry(size[0], size[1], size[2]);
         const col = new THREE.Color(MAT_COLORS[p.mat] ?? 0xffffff);
         const mesh = new THREE.Mesh(geo, getMat(p.mat, { color: col, metalness: 0.4, roughness: 0.5 }));
-        const m = new THREE.Matrix4().makeBasis(
-          new THREE.Vector3(...p.axis),
-          new THREE.Vector3(...p.up),
-          new THREE.Vector3(...p.side)
-        );
+        // 用右手正交基构造姿态：Z 由 X×Y 算出来。
+        // 直接拿 (axis, up, side) 拼矩阵时行列式可能是 −1（左手系），
+        // setFromRotationMatrix 会给出一个无效的四元数，极板朝向就乱了。
+        const ax = new THREE.Vector3(...p.axis).normalize();
+        const uy = new THREE.Vector3(...p.up);
+        uy.addScaledVector(ax, -ax.dot(uy)).normalize();      // 与 ax 正交化
+        const sz = new THREE.Vector3().crossVectors(ax, uy).normalize();
+        const m = new THREE.Matrix4().makeBasis(ax, uy, sz);
         mesh.quaternion.setFromRotationMatrix(m);
         mesh.position.set(...p.center);
         this.circuitGroup.add(mesh);

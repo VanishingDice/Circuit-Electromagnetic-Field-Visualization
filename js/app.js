@@ -1,7 +1,7 @@
 /**
  * app.js —— 把电路编辑器、求解器、三维场景和可视化面板接在一起
  */
-import { createDefaultCircuit, solveCircuit, buildScene, TYPES } from './circuit.js';
+import { createDefaultCircuit, solveCircuit, buildScene, TYPES, newId } from './circuit.js';
 import { METER_PER_UNIT } from './field.js';
 import { Editor2D } from './editor2d.js';
 import { Scene3D } from './scene.js';
@@ -29,7 +29,8 @@ const HINTS = {
 const state = {
   field: 'B',
   mode: 'stream',
-  density: 0.45,
+  density: 0.45,       // 主视图
+  paneDensity: 0.45,   // 截取空间（单独控制）
   opacity: 0.95,
   sliceAxis: 'y',
   slicePos: 0,
@@ -146,7 +147,7 @@ function updatePane() {
   slicePane.update({
     field: state.field,
     mode: state.mode,
-    density: state.density,
+    density: state.paneDensity,
     opacity: state.opacity,
     colorByPotential: state.colorByPot,
     sliceAxis: state.sliceAxis,
@@ -168,6 +169,9 @@ function updateViz() {
     sliceAxis: state.sliceAxis,
     slicePos: state.slicePos,
   });
+  if (viz.zero) {
+    $('hint').textContent = '当前场强近似为零：电路里没有电流（或没有电荷），所以画不出场';
+  }
   const t = $('stats');
   const n = viz.lastStats?.count ?? viz.lastStats?.lines ?? viz.lastStats?.N ?? 0;
   if (n) t.dataset.samples = n;
@@ -319,6 +323,12 @@ spBind('sp-sz', 'sz', 10);
 $('sp-fit')?.addEventListener('click', () => slicePane.frame());
 $('sp-showbox')?.addEventListener('change', (e) => boxGizmo.setVisible(e.target.checked));
 
+$('sp-density')?.addEventListener('input', (e) => {
+  state.paneDensity = +e.target.value / 100;
+  clearTimeout(window.__pdv);
+  window.__pdv = setTimeout(updatePane, 140);
+});
+
 $('btn-slice').addEventListener('click', () => {
   state.sliceOn = !state.sliceOn;
   $('btn-slice').classList.toggle('active', state.sliceOn);
@@ -342,6 +352,7 @@ $('btn-analysis').addEventListener('click', () => {
 $('wire-radius').addEventListener('input', (e) => {
   state.wireRadius = +e.target.value / 100;   // 1..14 → 0.01..0.14
   $('wire-label').textContent = `导线半径 ${(state.wireRadius * 10).toFixed(2)} mm`;
+  if ($('sp-density')) $('sp-density').value = String(Math.round(state.paneDensity * 100));
   clearTimeout(window.__wr);
   window.__wr = setTimeout(() => scheduleRebuild(false), 120);
 });
@@ -422,6 +433,8 @@ const qs = new URLSearchParams(location.search);
   const m = qs.get('mode');
   if (m && FIELD_INFO[state.field].modes.includes(m)) state.mode = m;
   if (qs.has('density')) state.density = Math.min(1, Math.max(0, +qs.get('density') / 100));
+  if (qs.has('pdensity')) state.paneDensity = Math.min(1, Math.max(0, +qs.get('pdensity') / 100));
+  else if (qs.has('density')) state.paneDensity = state.density;
   if (qs.has('slicePos')) state.slicePos = Math.min(1, Math.max(-1, +qs.get('slicePos') / 100));
   if (qs.get('sliceAxis')) state.sliceAxis = qs.get('sliceAxis');
   if (qs.get('analysis') === '1') state.analysisOn = true;
@@ -603,6 +616,26 @@ function runSelfTest() {
       ok(true, '截取空间面板');
     } catch (err) {
       ok(false, '截取空间面板抛错', String(err.message).slice(0, 80));
+    }
+
+    // 9.7 断路（电池 + 两根断头线）→ 判定为零场，不画任何东西
+    try {
+      const backup = circuit.elements;
+      const e = (type, a, b, v) => ({ id: newId(), type, a, b, value: v });
+      circuit.elements = [
+        e('battery', [0, 0], [0, 3], 9),
+        e('wire', [0, 3], [4, 3]),
+        e('wire', [0, 0], [4, 0]),
+      ];
+      state.field = 'S'; state.mode = 'arrows';
+      lastCount = -1;
+      rebuild();
+      ok(viz.zero === true, '断路时 |S| 判定为零场（不画箭头）');
+      circuit.elements = backup;
+      lastCount = -1;
+      rebuild();
+    } catch (err) {
+      ok(false, '断路判定抛错', String(err.message).slice(0, 80));
     }
 
     // 10. 清空后不崩溃
