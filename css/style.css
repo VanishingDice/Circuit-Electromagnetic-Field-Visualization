@@ -460,3 +460,7 @@ input[type=range]::-webkit-slider-thumb {
   color: #6f8298;
   font-variant-numeric: tabular-nums;
 }
+
+/* 空间（体积）窗口：默认摆在截面窗口右边，可拖动 */
+.volwin { left: 400px; }
+.volwin .sw-canvas canvas { background: #04070b; }

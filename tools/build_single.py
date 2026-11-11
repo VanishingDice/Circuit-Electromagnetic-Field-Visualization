@@ -24,6 +24,7 @@ MODULES = [
     'js/editor2d.js',
     'js/analysis.js',
     'js/slice.js',
+    'js/volume.js',
     'js/app.js',
 ]
 

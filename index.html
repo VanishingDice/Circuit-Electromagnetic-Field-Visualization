@@ -39,6 +39,7 @@
     </div>
 
     <div class="topbar-actions">
+      <button id="btn-volume" class="ghost" title="框选一块空间，在独立窗口里做体渲染">空间</button>
       <button id="btn-slice" class="ghost" title="可移动/旋转的分析截面 + 高精度窗口">截面</button>
       <button id="btn-analysis" class="ghost" title="看清导线内部的能量流向">剖面</button>
       <button id="btn-rotate" class="ghost" title="让相机缓慢旋转">环绕</button>
@@ -113,6 +114,66 @@
 
       <div class="overlay legend-hint" id="hint"></div>
       <div class="version" id="version">v—</div>
+
+      <div class="overlay slicewin volwin hidden" id="volwin">
+        <div class="sw-head" id="vw-head">
+          <span class="sw-title">空间 · <b id="vw-title">|S| 能流</b></span>
+          <span class="sw-btns">
+            <button id="vw-pop" title="在独立窗口里打开（可拖到另一块屏幕）">独立窗口</button>
+            <button id="vw-close" title="关闭">×</button>
+          </span>
+        </div>
+        <div class="sw-canvas">
+          <canvas id="vw-canvas" width="256" height="256"></canvas>
+          <div class="sw-progress-wrap hidden" id="vw-progress-wrap">
+            <div class="sw-progress" id="vw-progress"></div>
+          </div>
+          <span class="sw-res" id="vw-res">—</span>
+        </div>
+        <div class="sw-legend">
+          <div class="sw-bar" id="vw-legend"></div>
+          <div class="sw-scale"><span id="vw-lo">—</span><span id="vw-hi">—</span></div>
+          <div class="sw-unit" id="vw-unit"></div>
+        </div>
+        <div class="sw-ctl">
+          <label><span>中心 X <i id="vw-cx-label">0.00</i></span>
+            <input type="range" id="vw-cx" min="-80" max="80" value="0"></label>
+          <label><span>中心 Y <i id="vw-cy-label">0.40</i></span>
+            <input type="range" id="vw-cy" min="-40" max="80" value="8"></label>
+          <label><span>中心 Z <i id="vw-cz-label">0.00</i></span>
+            <input type="range" id="vw-cz" min="-80" max="80" value="0"></label>
+          <label><span>区域边长 <i id="vw-half-label">5.20 格</i></span>
+            <input type="range" id="vw-half" min="4" max="90" value="26"></label>
+          <label><span>视角 偏航 / 俯仰</span>
+            <input type="range" id="vw-yaw" min="0" max="360" value="32"></label>
+          <label><span>&nbsp;</span><input type="range" id="vw-pitch" min="-85" max="85" value="46"></label>
+          <label><span>不透明度</span>
+            <input type="range" id="vw-gain" min="15" max="200" value="100"></label>
+          <label><span>阈值 <i id="vw-thresh-label">0.50</i></span>
+            <input type="range" id="vw-thresh" min="0" max="90" value="50"></label>
+        </div>
+        <div class="sw-foot">
+          <select id="vw-field">
+            <option value="S">|S| 能流</option>
+            <option value="E">|E| 电场</option>
+            <option value="B">|B| 磁场</option>
+            <option value="phi">φ 电势</option>
+          </select>
+          <select id="vw-mode">
+            <option value="volume">体渲染</option>
+            <option value="mip">最大投影</option>
+          </select>
+          <select id="vw-res-sel">
+            <option value="48">48³</option>
+            <option value="64" selected>64³</option>
+            <option value="96">96³</option>
+          </select>
+        </div>
+        <div class="sw-foot">
+          <button id="vw-re" class="ghost">重算</button>
+          <span class="sw-probe">在图上拖动可旋转视角</span>
+        </div>
+      </div>
 
       <div class="overlay slicewin hidden" id="slicewin">
         <div class="sw-head" id="sw-head">

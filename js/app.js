@@ -8,6 +8,7 @@ import { Scene3D } from './scene.js';
 import { FieldViz, turbo, diverging } from './viz.js';
 import { AnalysisCard } from './analysis.js';
 import { SliceTool } from './slice.js';
+import { VolumeTool } from './volume.js';
 import { VERSION, BUILD } from './version.js';
 
 const MODE_LABEL = { arrows: '箭头', stream: '流线', slice: '切片' };
@@ -36,6 +37,7 @@ const state = {
   wireRadius: 0.05,     // 世界单位（1 单位 = 1 cm）
   analysisOn: false,
   sliceOn: false,
+  volumeOn: false,
 };
 
 const circuit = createDefaultCircuit();
@@ -56,6 +58,19 @@ const editor = new Editor2D(editorCanvas, {
 });
 editor.setCircuit(circuit);
 const analysis = new AnalysisCard($('analysis'));
+const volume = new VolumeTool(scene3d, {
+  win: $('volwin'), head: $('vw-head'), canvas: $('vw-canvas'),
+  title: $('vw-title'), res: $('vw-res'),
+  progress: $('vw-progress'), progressWrap: $('vw-progress-wrap'),
+  legend: $('vw-legend'), legendLo: $('vw-lo'), legendHi: $('vw-hi'), unit: $('vw-unit'),
+  cx: $('vw-cx'), cy: $('vw-cy'), cz: $('vw-cz'), half: $('vw-half'),
+  cxLabel: $('vw-cx-label'), cyLabel: $('vw-cy-label'), czLabel: $('vw-cz-label'),
+  halfLabel: $('vw-half-label'),
+  yaw: $('vw-yaw'), pitch: $('vw-pitch'), gain: $('vw-gain'),
+  thresh: $('vw-thresh'), threshLabel: $('vw-thresh-label'),
+  field: $('vw-field'), mode: $('vw-mode'), resSel: $('vw-res-sel'),
+  popBtn: $('vw-pop'), closeBtn: $('vw-close'), reBtn: $('vw-re'),
+});
 const slice = new SliceTool(scene3d, {
   win: $('slicewin'), head: $('sw-head'), canvas: $('sw-canvas'),
   title: $('sw-title'), res: $('sw-res'),
@@ -86,6 +101,7 @@ function rebuild() {
     scene3d.setCircuit(sceneData.parts, sceneData.bounds, { colorByPotential: state.colorByPot, frame });
     updateViz();
     if (state.analysisOn) updateAnalysis();
+    if (state.volumeOn) volume.setScene({ solver: sceneData.solver, bounds: sceneData.bounds });
     if (state.sliceOn) {
       slice.setScene({
         solver: sceneData.solver,
@@ -251,6 +267,13 @@ $('color-pot').addEventListener('change', (e) => {
   state.colorByPot = e.target.checked;
   if (sceneData) scene3d.setCircuit(sceneData.parts, sceneData.bounds, { colorByPotential: state.colorByPot, frame: false });
 });
+$('btn-volume').addEventListener('click', () => {
+  state.volumeOn = !state.volumeOn;
+  $('btn-volume').classList.toggle('active', state.volumeOn);
+  volume.show(state.volumeOn);
+  if (state.volumeOn) volume.setScene({ solver: sceneData?.solver, bounds: sceneData?.bounds });
+});
+
 $('btn-slice').addEventListener('click', () => {
   state.sliceOn = !state.sliceOn;
   $('btn-slice').classList.toggle('active', state.sliceOn);
@@ -358,6 +381,19 @@ window.addEventListener('keydown', (e) => {
   if (qs.get('sliceAxis')) state.sliceAxis = qs.get('sliceAxis');
   if (qs.get('analysis') === '1') state.analysisOn = true;
   if (qs.get('slice') === '1') state.sliceOn = true;
+  if (qs.get('volume') === '1') state.volumeOn = true;
+  // 体积窗口的参数（方便做对比截图）
+  if (qs.get('volres')) {
+    volume.state.res = +qs.get('volres');
+    volume.state.imgRes = Math.min(512, 220 + volume.state.res * 2.6);
+  }
+  if (qs.get('volhalf')) { volume.state.half = +qs.get('volhalf') / 10; volume._fitted = true; }
+  if (qs.get('volyaw')) volume.state.yaw = +qs.get('volyaw');
+  if (qs.get('volpitch')) volume.state.pitch = +qs.get('volpitch');
+  if (qs.get('volthresh')) volume.state.thresh = +qs.get('volthresh') / 100;
+  if (qs.get('volgain')) volume.state.gain = +qs.get('volgain') / 100;
+  if (qs.get('volfield')) volume.state.field = qs.get('volfield');
+  if (qs.get('volmode')) volume.state.mode = qs.get('volmode');
   if (qs.get('wire')) state.wireRadius = Math.min(0.14, Math.max(0.01, +qs.get('wire') / 100));
   if (qs.get('editor') === '0') {
     $('editorPane').classList.add('hidden');
@@ -382,6 +418,11 @@ rebuild();
 if (state.analysisOn) {
   $('btn-analysis').classList.add('active');
   $('analysis').classList.remove('hidden');
+}
+if (state.volumeOn) {
+  $('btn-volume').classList.add('active');
+  volume.show(true);
+  volume.setScene({ solver: sceneData?.solver, bounds: sceneData?.bounds });
 }
 if (state.sliceOn) {
   $('btn-slice').classList.add('active');
@@ -503,6 +544,19 @@ function runSelfTest() {
       }
     }
     state.sliceOn = false; slice.show(false);
+
+    // 9.6 空间体渲染（小分辨率，只验证整条链路不抛错）
+    try {
+      state.volumeOn = true;
+      volume.state.res = 16;
+      volume.state.imgRes = 48;
+      volume.setScene({ solver: sceneData.solver, bounds: sceneData.bounds });
+      ok(true, '空间体渲染链路');
+      volume.show(false);
+      state.volumeOn = false;
+    } catch (err) {
+      ok(false, '空间体渲染抛错', String(err.message).slice(0, 80));
+    }
 
     // 10. 清空后不崩溃
     circuit.elements = [];

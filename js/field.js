@@ -72,6 +72,27 @@ export class FieldSolver {
       this.mid[3 * i + 2] = 0.5 * (z0 + z1);
     }
     this.lam = new Float64Array(n);
+    // 所有导体的整体包围盒（外扩一点）：interior() 先用它做 O(1) 剔除，
+    // 体渲染要采样几十万点，这一下能省掉绝大部分无用的逐段判断。
+    let x0 = Infinity, y0 = Infinity, z0 = Infinity;
+    let x1 = -Infinity, y1 = -Infinity, z1 = -Infinity;
+    for (let i = 0; i < n * 3; i += 3) {
+      if (this.p0[i] < x0) x0 = this.p0[i];
+      if (this.p1[i] < x0) x0 = this.p1[i];
+      if (this.p0[i] > x1) x1 = this.p0[i];
+      if (this.p1[i] > x1) x1 = this.p1[i];
+      if (this.p0[i + 1] < y0) y0 = this.p0[i + 1];
+      if (this.p1[i + 1] < y0) y0 = this.p1[i + 1];
+      if (this.p0[i + 1] > y1) y1 = this.p0[i + 1];
+      if (this.p1[i + 1] > y1) y1 = this.p1[i + 1];
+      if (this.p0[i + 2] < z0) z0 = this.p0[i + 2];
+      if (this.p1[i + 2] < z0) z0 = this.p1[i + 2];
+      if (this.p0[i + 2] > z1) z1 = this.p0[i + 2];
+      if (this.p1[i + 2] > z1) z1 = this.p1[i + 2];
+    }
+    const pad = this.conductorRadius * 2;
+    this.aabb = n ? [x0 - pad, y0 - pad, z0 - pad, x1 + pad, y1 + pad, z1 + pad] : null;
+    this._insideFlag = false;
     return this;
   }
 
@@ -189,6 +210,10 @@ export class FieldSolver {
    * @returns {boolean} 是否在导体内部
    */
   interior(px, py, pz, outE, outB) {
+    const box = this.aabb;
+    if (box && (px < box[0] || px > box[3] || py < box[1] || py > box[4] || pz < box[2] || pz > box[5])) {
+      return false;
+    }
     const a = this.conductorRadius;
     const { p0, p1, len, cur, eAx, n } = this;
     for (let i = 0; i < n; i++) {
