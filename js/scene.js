@@ -116,6 +116,9 @@ export class Scene3D {
     this.clock = new THREE.Clock();
     this._running = true;
     this._bounds = null;
+    // 可选的裁剪平面（「截取空间」面板用：只显示选定的那个体块）
+    this.clipPlanes = null;
+    this.renderer.localClippingEnabled = true;
     this._loop();
     window.addEventListener('resize', () => this.resize());
     // 面板折叠 / 窗口改变时容器尺寸会变，用 ResizeObserver 兜住
@@ -138,6 +141,23 @@ export class Scene3D {
     this.camera.aspect = w / h;
     this.camera.updateProjectionMatrix();
     this.renderer.setSize(w, h);
+  }
+
+  /** 设置/清除裁剪平面（世界坐标） */
+  setClipPlanes(planes) {
+    this.clipPlanes = planes && planes.length ? planes : null;
+    this.applyClipTo(this.scene);
+  }
+
+  /** 把当前裁剪平面套到一棵子树上的所有材质 */
+  applyClipTo(root) {
+    if (!this.clipPlanes) return;
+    root.traverse((o) => {
+      if (o.userData && o.userData.noClip) return;
+      const apply = (m) => { if (m) m.clippingPlanes = this.clipPlanes; };
+      if (Array.isArray(o.material)) o.material.forEach(apply);
+      else apply(o.material);
+    });
   }
 
   frameTo(bounds) {
@@ -245,6 +265,7 @@ export class Scene3D {
       }
     }
     if (bounds && frame) { this._bounds = bounds; this.frameTo(bounds); }
+    this.applyClipTo(this.circuitGroup);
   }
 
   /** 重新按当前场景取景（布局变化后调用） */

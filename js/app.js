@@ -8,7 +8,7 @@ import { Scene3D } from './scene.js';
 import { FieldViz, turbo, diverging } from './viz.js';
 import { AnalysisCard } from './analysis.js';
 import { SliceTool } from './slice.js';
-import { VolumeTool } from './volume.js';
+import { SlicePane } from './slicepane.js';
 import { VERSION, BUILD } from './version.js';
 
 const MODE_LABEL = { arrows: '箭头', stream: '流线', slice: '切片' };
@@ -37,7 +37,6 @@ const state = {
   wireRadius: 0.05,     // 世界单位（1 单位 = 1 cm）
   analysisOn: false,
   sliceOn: false,
-  volumeOn: false,
 };
 
 const circuit = createDefaultCircuit();
@@ -58,7 +57,8 @@ const editor = new Editor2D(editorCanvas, {
 });
 editor.setCircuit(circuit);
 const analysis = new AnalysisCard($('analysis'));
-const volume = new VolumeTool(scene3d, $('volwin'));
+const slicePane = new SlicePane($('sp-container'));
+slicePane.attachMain(scene3d);
 const slice = new SliceTool(scene3d, {
   win: $('slicewin'), head: $('sw-head'), canvas: $('sw-canvas'),
   title: $('sw-title'), res: $('sw-res'),
@@ -91,7 +91,13 @@ function rebuild() {
     scene3d.setCircuit(sceneData.parts, sceneData.bounds, { colorByPotential: state.colorByPot, frame });
     updateViz();
     if (state.analysisOn) updateAnalysis();
-    if (state.volumeOn) volume.setScene({ solver: sceneData.solver, bounds: sceneData.bounds });
+    slicePane.setScene({
+      solver: sceneData.solver,
+      bounds: sceneData.bounds,
+      parts: sceneData.parts,
+      colorByPotential: state.colorByPot,
+    });
+    updatePane();
     if (state.sliceOn) {
       slice.setScene({
         solver: sceneData.solver,
@@ -122,6 +128,21 @@ function updateAnalysis() {
   if (!sceneData) return;
   analysis.setData({ solver: sceneData.solver, radius: state.wireRadius * METER_PER_UNIT });
   $('analysis').classList.remove('hidden');
+}
+
+function updatePane() {
+  if (!sceneData) return;
+  slicePane.update({
+    field: state.field,
+    mode: state.mode,
+    density: state.density,
+    opacity: state.opacity,
+    colorByPotential: state.colorByPot,
+    sliceAxis: state.sliceAxis,
+    slicePos: state.slicePos,
+  });
+  const info = FIELD_INFO[state.field];
+  $('sp-sub').textContent = `${info.label} · ${MODE_LABEL[state.mode]} · 体块内加密采样`;
 }
 
 function updateViz() {
@@ -199,6 +220,7 @@ document.querySelectorAll('#field-chips .chip').forEach((btn) => {
     syncModeChips();
     updateLegend();
     updateViz();
+    updatePane();
   });
 });
 
@@ -208,6 +230,7 @@ document.querySelectorAll('#mode-chips .chip').forEach((btn) => {
     state.mode = btn.dataset.mode;
     syncModeChips();
     updateViz();
+    updatePane();
   });
 });
 
@@ -234,7 +257,7 @@ document.querySelectorAll('#palette .tool').forEach((btn) => {
 $('density').addEventListener('input', (e) => {
   state.density = +e.target.value / 100;
   clearTimeout(window.__dv);
-  window.__dv = setTimeout(updateViz, 120);
+  window.__dv = setTimeout(() => { updateViz(); updatePane(); }, 120);
 });
 $('opacity').addEventListener('input', (e) => {
   state.opacity = +e.target.value / 100;
@@ -257,12 +280,21 @@ $('color-pot').addEventListener('change', (e) => {
   state.colorByPot = e.target.checked;
   if (sceneData) scene3d.setCircuit(sceneData.parts, sceneData.bounds, { colorByPotential: state.colorByPot, frame: false });
 });
-$('btn-volume').addEventListener('click', () => {
-  state.volumeOn = !state.volumeOn;
-  $('btn-volume').classList.toggle('active', state.volumeOn);
-  volume.show(state.volumeOn);
-  if (state.volumeOn) volume.setScene({ solver: sceneData?.solver, bounds: sceneData?.bounds });
-});
+// 截取空间的体块滑杆
+const spBind = (id, key, scale) => {
+  const el = $(id);
+  if (!el) return;
+  el.addEventListener('input', (e) => {
+    slicePane.setBox({ [key]: +e.target.value / scale });
+  });
+};
+spBind('sp-cx', 'cx', 20);
+spBind('sp-cy', 'cy', 20);
+spBind('sp-cz', 'cz', 20);
+spBind('sp-sx', 'sx', 10);
+spBind('sp-sy', 'sy', 10);
+spBind('sp-sz', 'sz', 10);
+$('sp-fit')?.addEventListener('click', () => slicePane.frame());
 
 $('btn-slice').addEventListener('click', () => {
   state.sliceOn = !state.sliceOn;
@@ -298,10 +330,10 @@ $('btn-rotate').addEventListener('click', () => {
   $('btn-rotate').classList.toggle('active', state.autoRotate);
 });
 $('btn-edit').addEventListener('click', () => {
-  const pane = $('editorPane');
+  const pane = $('leftCol');
   pane.classList.toggle('hidden');
   $('btn-edit').classList.toggle('active', !pane.classList.contains('hidden'));
-  setTimeout(() => { scene3d.resize(); editor.resize(); }, 260);
+  setTimeout(() => { scene3d.resize(); slicePane.resize(); editor.resize(); }, 60);
 });
 $('btn-help').addEventListener('click', () => $('help-modal').classList.remove('hidden'));
 $('help-close').addEventListener('click', () => $('help-modal').classList.add('hidden'));
@@ -371,26 +403,19 @@ const qs = new URLSearchParams(location.search);
   if (qs.get('sliceAxis')) state.sliceAxis = qs.get('sliceAxis');
   if (qs.get('analysis') === '1') state.analysisOn = true;
   if (qs.get('slice') === '1') state.sliceOn = true;
-  if (qs.get('volume') === '1') state.volumeOn = true;
-  // 体积窗口的参数（方便做对比截图）
-  if (qs.get('volres')) {
-    volume.state.res = +qs.get('volres');
-    volume.state.imgRes = Math.min(512, 220 + volume.state.res * 2.6);
+  // 截取空间的参数
+  for (const [k, id, sc] of [['cx', 'sp-cx', 20], ['cy', 'sp-cy', 20], ['cz', 'sp-cz', 20],
+                             ['sx', 'sp-sx', 10], ['sy', 'sp-sy', 10], ['sz', 'sp-sz', 10]]) {
+    const v = qs.get('sp' + k);
+    if (v !== null) {
+      slicePane.box[k] = +v / 10;
+      const el = $(id);
+      if (el) el.value = String(Math.round(slicePane.box[k] * sc));
+    }
   }
-  if (qs.get('volhalf')) {
-    const h = +qs.get('volhalf') / 10;
-    volume.state.sx = volume.state.sy = volume.state.sz = h;
-    volume._fitted = true;
-  }
-  if (qs.get('volyaw')) volume.state.yaw = +qs.get('volyaw');
-  if (qs.get('volpitch')) volume.state.pitch = +qs.get('volpitch');
-  if (qs.get('volthresh')) volume.state.thresh = +qs.get('volthresh') / 100;
-  if (qs.get('volgain')) volume.state.gain = +qs.get('volgain') / 100;
-  if (qs.get('volfield')) volume.state.field = qs.get('volfield');
-  if (qs.get('volmode')) volume.state.mode = qs.get('volmode');
   if (qs.get('wire')) state.wireRadius = Math.min(0.14, Math.max(0.01, +qs.get('wire') / 100));
   if (qs.get('editor') === '0') {
-    $('editorPane').classList.add('hidden');
+    $('leftCol').classList.add('hidden');
     $('btn-edit').classList.remove('active');
   }
 })();
@@ -412,12 +437,6 @@ rebuild();
 if (state.analysisOn) {
   $('btn-analysis').classList.add('active');
   $('analysis').classList.remove('hidden');
-}
-if (state.volumeOn) {
-  $('btn-volume').classList.add('active');
-  volume.show(true);
-  volume.setScene({ solver: sceneData?.solver, bounds: sceneData?.bounds });
-  if (qs.get('volpop') === '1') setTimeout(() => volume.openPopup(), 1200);
 }
 if (state.sliceOn) {
   $('btn-slice').classList.add('active');
@@ -540,17 +559,13 @@ function runSelfTest() {
     }
     state.sliceOn = false; slice.show(false);
 
-    // 9.6 空间体渲染（小分辨率，只验证整条链路不抛错）
+    // 9.6 截取空间面板（同源渲染 + 裁剪）
     try {
-      state.volumeOn = true;
-      volume.state.res = 16;
-      volume.state.imgRes = 48;
-      volume.setScene({ solver: sceneData.solver, bounds: sceneData.bounds });
-      ok(true, '空间体渲染链路');
-      volume.show(false);
-      state.volumeOn = false;
+      slicePane.setBox({ sx: 1.2, sy: 0.8, sz: 1.2 });
+      updatePane();
+      ok(true, '截取空间面板');
     } catch (err) {
-      ok(false, '空间体渲染抛错', String(err.message).slice(0, 80));
+      ok(false, '截取空间面板抛错', String(err.message).slice(0, 80));
     }
 
     // 10. 清空后不崩溃

@@ -158,7 +158,8 @@ export class FieldViz {
     const { solver, bounds, field } = o;
     if (!solver || !solver.n) return;
     if (field === 'phi' && o.mode !== 'slice') o = { ...o, mode: 'slice' };
-    const box = this.box(bounds);
+    // o.box 存在时只在指定体块里采样（「截取空间」面板用）
+    const box = o.box || this.box(bounds);
     if (o.mode === 'arrows') this.buildArrows(o, box);
     else if (o.mode === 'stream') this.buildStreams(o, box);
     else if (o.mode === 'slice') this.buildSlice(o, box);
@@ -242,6 +243,7 @@ export class FieldViz {
     }
     mesh.instanceMatrix.needsUpdate = true;
     if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
+    this.scene3d.applyClipTo(mesh);
     this.group.add(mesh);
     this.arrows = mesh;
     this.lastStats = { count: keep.length, norm, mags };
@@ -306,6 +308,7 @@ export class FieldViz {
       depthWrite: false,
     });
     this.lines = new THREE.LineSegments(geo, mat);
+    this.scene3d.applyClipTo(this.lines);
     this.group.add(this.lines);
 
     // 方向指示箭头（锥体），颜色跟随该点的场强
@@ -334,6 +337,7 @@ export class FieldViz {
       inst.instanceMatrix.needsUpdate = true;
       if (inst.instanceColor) inst.instanceColor.needsUpdate = true;
       this.marks = inst;
+      this.scene3d.applyClipTo(inst);
       this.group.add(inst);
     }
 
@@ -482,6 +486,7 @@ export class FieldViz {
     });
     this.slice = new THREE.Mesh(g, mat);
     this.slice.renderOrder = 1;
+    this.scene3d.applyClipTo(this.slice);
     this.group.add(this.slice);
 
     // 等值线（marching squares）
@@ -522,6 +527,7 @@ export class FieldViz {
         color: 0x000000, transparent: true, opacity: 0.55,
       }));
       this.contours.renderOrder = 2;
+      this.scene3d.applyClipTo(this.contours);
       this.group.add(this.contours);
     }
     this.lastStats = { N };
