@@ -36,6 +36,8 @@ const state = {
   slicePos: 0,
   colorByPot: true,
   interior: false,     // 是否画导体内部的场
+  insideMap: false,    // 内部箭头是否用外侧同款色标
+  arrowScale: 1,       // 箭头大小全局系数
   boxLock: { x: false, y: false, z: false },   // 锁定后拖动截取框不会改这一轴
   sliceLock: { x: false, y: false, z: false }, // 截面中心的锁
   autoRotate: false,
@@ -165,6 +167,8 @@ function updatePane() {
     mode: state.mode,
     density: state.paneDensity,
     interior: state.interior,
+    insideMap: state.insideMap,
+    arrowScale: state.arrowScale,
     opacity: state.opacity,
     colorByPotential: state.colorByPot,
     sliceAxis: state.sliceAxis,
@@ -195,6 +199,8 @@ function updateViz() {
     mode: state.mode,
     density: state.density,
     interior: state.interior,
+    insideMap: state.insideMap,
+    arrowScale: state.arrowScale,
     opacity: state.opacity,
     sliceAxis: state.sliceAxis,
     slicePos: state.slicePos,
@@ -449,11 +455,31 @@ const applyInterior = () => {
   updatePane();
 };
 
+$('inside-map')?.addEventListener('change', (e) => {
+  state.insideMap = e.target.checked;
+  updateViz();
+  updatePane();
+});
+if ($('inside-map')) $('inside-map').checked = state.insideMap;
+
+$('arrow-size')?.addEventListener('input', (e) => {
+  state.arrowScale = +e.target.value / 100;
+  $('arrow-label').textContent = `箭头大小 ×${state.arrowScale.toFixed(2)}`;
+  updateViz();
+  updatePane();
+});
+if ($('arrow-size')) {
+  $('arrow-size').value = String(Math.round(state.arrowScale * 100));
+  $('arrow-label').textContent = `箭头大小 ×${state.arrowScale.toFixed(2)}`;
+}
+
 $('show-inside')?.addEventListener('change', (e) => {
   state.interior = e.target.checked;
   applyInterior();
 });
 if ($('show-inside')) $('show-inside').checked = state.interior;
+if ($('inside-map')) $('inside-map').checked = state.insideMap;
+if ($('arrow-size')) $('arrow-size').value = String(Math.round(state.arrowScale * 100));
 if (state.interior) applyInterior();
 
 $('sp-density')?.addEventListener('input', (e) => {
@@ -629,6 +655,8 @@ const qs = new URLSearchParams(location.search);
   }
   if (qs.get('seeds') === 'uniform') viz.seedMode = 'uniform';
   if (qs.get('dbg') === '1') state.debugStats = true;
+  if (qs.get('arrow')) state.arrowScale = Math.max(0.3, Math.min(2.5, +qs.get('arrow') / 100));
+  if (qs.get('insidemap') === '1') state.insideMap = true;
   if (qs.get('circuit') === 'simple') circuit.elements = createSimpleLoop().elements;
   if (qs.get('inside') === '1') state.interior = true;
   if (qs.get('wire')) state.wireRadius = Math.min(0.14, Math.max(0.01, +qs.get('wire') / 100));

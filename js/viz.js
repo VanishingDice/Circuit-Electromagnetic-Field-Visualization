@@ -240,7 +240,7 @@ export class FieldViz {
     const spanMin = Math.min(
       box.max[0] - box.min[0], box.max[1] - box.min[1], box.max[2] - box.min[2]
     );
-    const lenBase = Math.max(0.015, Math.min(0.22, spanMin * 0.09));
+    const lenBase = Math.max(0.015, Math.min(0.22, spanMin * 0.09)) * (o.arrowScale || 1);
     for (let n = 0; n < keep.length; n++) {
       const i = keep[n];
       const p = pts[i], d = dirs[i];
@@ -266,7 +266,15 @@ export class FieldViz {
 
     // 导体内部的场：E 沿导线、B 绕轴、S 指向轴心。
     // 步长用和外侧网格一样的 1/s，密度才一致
-    if (o.interior && field !== 'phi') this.buildInteriorArrows(o, field, 1 / s);
+    if (o.interior && field !== 'phi') {
+      // 内部密度也跟着密度滑杆走：density 越大，间距越小、箭头越多
+      const dens = Math.max(0.2, Math.min(2, o.density ?? 0.45));
+      // 内部间距直接跟密度滑杆走：0.10 格 / density。
+      // 原来用 1/s 推导，但线段本身只有 0.3 格，密度再高 nAlong 也还是 1，
+      // 滑杆对内圈等于没作用。
+      const innerSpacing = 0.1 / dens;
+      this.buildInteriorArrows(o, field, innerSpacing);
+    }
   }
 
   /* ---- 导体内部的箭头（尺度跟着导体半径走） ---- */
@@ -301,8 +309,8 @@ export class FieldViz {
       // 这样内部和外部的箭头密度看起来是一致的
       const Lw = L * M2W;                       // 段长（世界单位）
       const aW = a * M2W;                       // 半径（世界单位）
-      const nAlong = Math.max(1, Math.min(40, Math.round(Lw / spacing)));
-      const nAz = Math.max(3, Math.min(16, Math.round((2 * Math.PI * aW) / spacing)));
+      const nAlong = Math.max(1, Math.min(60, Math.round(Lw / spacing)));
+      const nAz = Math.max(3, Math.min(24, Math.round((2 * Math.PI * aW) / spacing)));
       for (let q = 0; q < nAlong; q++) {
         const t = (q + 0.5) / nAlong;
         const bx = p0[0] + (p1[0] - p0[0]) * t;
@@ -326,7 +334,7 @@ export class FieldViz {
             p: [px * 100, py * 100, pz * 100],
             d: [v[0] / m, v[1] / m, v[2] / m],
             m,
-            len: a * 100 * 1.25,
+            len: a * 100 * 0.7 * (o.arrowScale || 1),
           });
         }
       }
@@ -367,9 +375,15 @@ export class FieldViz {
       dummy.scale.setScalar(it.len * (0.75 + 0.5 * t));
       dummy.updateMatrix();
       mesh.setMatrixAt(n, dummy.matrix);
-      // 亮度编码内部场强：暗洋红 → 亮洋红
-      const b = 0.42 + 0.58 * t;
-      col.setRGB(BASE.r * b, BASE.g * b, BASE.b * b, THREE.SRGBColorSpace);
+      if (o.insideMap) {
+        // 用和外侧一样的 turbo 色标（归一化仍按内部范围，否则全是最暗端）
+        const cc = turbo(t);
+        col.setRGB(cc[0], cc[1], cc[2], THREE.SRGBColorSpace);
+      } else {
+        // 亮度编码内部场强：暗洋红 → 亮洋红
+        const b = 0.42 + 0.58 * t;
+        col.setRGB(BASE.r * b, BASE.g * b, BASE.b * b, THREE.SRGBColorSpace);
+      }
       mesh.setColorAt(n, col);
     }
     mesh.instanceMatrix.needsUpdate = true;
