@@ -218,7 +218,9 @@ export class SlicePane {
       (solver.p0[i3 + 1] + solver.p1[i3 + 1]) / 2,
       (solver.p0[i3 + 2] + solver.p1[i3 + 2]) / 2,
     ];
-    const half = Math.max(0.16, (this.conductorR || 0.0005) * 100 * 5.5);
+    // 默认取景别太小：一两毫米的盒子连一根导线的场结构都装不下，
+    // 流线一生成就出界，看起来就像「坏了」
+    const half = Math.max(0.55, Math.min(2.4, (this.conductorR || 0.0005) * 100 * 16));
     this.box.sx = this.box.sy = this.box.sz = half;
     this.box.cx = mid[0] * 100 - this.base[0];
     this.box.cy = mid[1] * 100 - this.base[1];
@@ -249,6 +251,21 @@ export class SlicePane {
       min: [box.min[0] - pad[0], box.min[1] - pad[1], box.min[2] - pad[2]],
       max: [box.max[0] + pad[0], box.max[1] + pad[1], box.max[2] + pad[2]],
     };
+    // 体块里一个导体都没有时，内部箭头当然看不到——提示一下
+    this._hasConductor = (() => {
+      const box = this.worldBox;
+      for (let k = 0; k < this.solver.n; k++) {
+        const i3 = 3 * k;
+        for (let e = 0; e < 2; e++) {
+          const x = (e ? this.solver.p1[i3] : this.solver.p0[i3]) * 100;
+          const y = (e ? this.solver.p1[i3 + 1] : this.solver.p0[i3 + 1]) * 100;
+          const z = (e ? this.solver.p1[i3 + 2] : this.solver.p0[i3 + 2]) * 100;
+          if (x >= box.min[0] && x <= box.max[0] && y >= box.min[1] && y <= box.max[1] &&
+              z >= box.min[2] && z <= box.max[2]) return true;
+        }
+      }
+      return false;
+    })();
     this.viz.update({
       solver: this.solver,
       bounds: this.bounds,

@@ -171,7 +171,10 @@ function updatePane() {
     slicePos: state.slicePos,
   });
   const info = FIELD_INFO[state.field];
-  $('sp-sub').textContent = `${info.label} · ${MODE_LABEL[state.mode]} · 体块内加密采样`;
+  const inBox = slicePane._hasConductor !== false;
+  $('sp-sub').textContent = inBox
+    ? `${info.label} · ${MODE_LABEL[state.mode]} · 体块内加密采样`
+    : `${info.label} · ${MODE_LABEL[state.mode]} · 体块里没有导体`;
 }
 
 function updateViz() {

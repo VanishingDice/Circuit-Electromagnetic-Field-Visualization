@@ -386,6 +386,7 @@ export class FieldViz {
       box.max[0] - box.min[0], box.max[1] - box.min[1], box.max[2] - box.min[2]
     );
     const sep0 = Math.max(0.008, spanMin / (16 + density * 54));
+    const stepH = Math.max(0.003, Math.min(0.075, spanMin / 60));
     let candidates = this.makeSeeds(solver, box, Math.round(nLines * 8), field, sep0);
     if (o.interior && field !== 'phi') {
       candidates = candidates.concat(this.makeInteriorSeeds(solver, box, Math.round(nLines * 0.35)));
@@ -440,10 +441,11 @@ export class FieldViz {
 
       // 导体外面的场线不穿进导体；导体内部的场线本来就在里面，所以不设终止条件，
       // 步长也要按导体尺度缩小（导线只有 0.5mm，用 0.075 格的步长直接跨出去了）
-      // 步数上限压下来：原来一条线能跨 20 多格，横穿整个场景显乱
+      // 步长必须跟采样范围走：截取空间吸附导线后盒子只有半格多，
+      // 用 0.075 的步长一条线只走四五步就出界，会被下面的 length 判定全过滤掉
       const line = inside
         ? integrate(fn, seed, box, (sd.h || 0.004), 600, null)
-        : integrate(fn, seed, box, 0.075, field === 'E' ? 260 : 190, solver);
+        : integrate(fn, seed, box, stepH, field === 'E' ? 260 : 190, solver);
       if (line.length < (inside ? 5 : 8)) continue;
 
       // 再看整条线：如果大半程都贴着已有线，就丢掉（只靠种子点判不够）
@@ -615,7 +617,8 @@ export class FieldViz {
       box.max[1] - box.min[1],
       box.max[2] - box.min[2]
     );
-    const rMax = Math.max(0.008, Math.min(1.05, spanMin * 0.42));
+    // 种子半径不能贴着盒子边缘：那样线一生成就出界，只剩一小段
+    const rMax = Math.max(0.008, Math.min(1.05, spanMin * 0.22));
     const radii = [0.32, 0.58, 0.8, 1.0];
     const seeds = [];
     let guard = 0;

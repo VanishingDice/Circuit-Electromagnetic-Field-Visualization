@@ -343,7 +343,19 @@ export function buildScene(circuit, solution, opts = {}) {
       case 'resistor': {
         // 本体画成半径 0.11 的壳，所以中间那段的「导体半径」也要跟着变，
         // 否则场线会从壳里穿过去
-        addPath([A, B], Va, Vb, { radius: (t) => (t > 0.2 && t < 0.8 ? 0.11 : wireRadius) });
+        // 半径要平滑过渡：原来在 t=0.2/0.8 处从 1.1mm 突跳到 0.5mm，
+        // 这等于在模型里加了一个「尖角」，场线会在那里聚成一束（看起来像能流
+        // 都涌向电阻某一端）。用一段渐变把台阶抹掉。
+        const BODY_R = 0.11, LEAD_R = wireRadius, T0 = 0.2, T1 = 0.8, FADE = 0.12;
+        addPath([A, B], Va, Vb, {
+          radius: (t) => {
+            const sm = (x) => (x <= 0 ? 0 : x >= 1 ? 1 : x * x * (3 - 2 * x));
+            let f = 1;                       // 1 = 本体半径，0 = 引线半径
+            if (t < T0) f = sm((t - (T0 - FADE)) / FADE);
+            else if (t > T1) f = sm(((T1 + FADE) - t) / FADE);
+            return LEAD_R + (BODY_R - LEAD_R) * f;
+          },
+        });
         const bodyA = V3.add(A, V3.mul(axis, L * 0.22));
         const bodyB = V3.add(A, V3.mul(axis, L * 0.78));
         parts.push({ kind: 'tube', pts: [A, bodyA], radius: wireRadius, mat: 'copper' });
