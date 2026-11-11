@@ -126,6 +126,10 @@ export class SlicePane {
     if (L.y) delete p.cy;
     if (L.z) delete p.cz;
     Object.assign(this.box, p);
+    // 尺寸不能真的到 0：体块退化会让采样网格无限大
+    this.box.sx = Math.max(0.004, this.box.sx);
+    this.box.sy = Math.max(0.004, this.box.sy);
+    this.box.sz = Math.max(0.004, this.box.sz);
     this.applyBoxChange();
   }
 

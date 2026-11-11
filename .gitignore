@@ -1,7 +1,9 @@
 # 构建产物（由 tools/build_single.py 生成，不入库）
 em-field-lab.html
 
-# 临时截图 / 调试输出
+# 临时截图 / 调试输出（根目录的过程图；docs/ 里的正式截图仍然入库）
+/*.png
+/*.jpg
 /shots/
 *.tmp
 *.log

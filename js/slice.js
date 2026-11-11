@@ -108,6 +108,7 @@ export class SliceTool {
     this.state = { cx: 0, cy: 0, cz: 0, yaw: 0, pitch: 90, size: 3.4, field: 'S', visible: false };
     this.mode3d = false;     // 窗口是否显示「立体视图」
     this.arrowN = 16;        // 立体视图的箭头网格密度（可调）
+    this.locks = { x: false, y: false, z: false };   // 中心轴锁定
     this._paintTick = 0;
 
     this.group = new THREE.Group();
@@ -145,7 +146,12 @@ export class SliceTool {
     this.bounds = bounds;
     if (conductorR) this.conductorR = conductorR;
     if (!solver || !solver.n) return;
-    if (!this._fitted) this.fitToBounds();
+    if (!this._fitted) {
+      this._fitted = true;
+      // 和截取空间一致：初始就吸附到发热最大的那根导线
+      this.attachToWire();
+      this.state.size = Math.max(2.4, this.state.size);
+    }
     this.update();
   }
 
@@ -486,6 +492,14 @@ export class SliceTool {
     this.update();
   }
 
+  setLocks(l) {
+    this.locks = { x: !!(l && l.x), y: !!(l && l.y), z: !!(l && l.z) };
+    for (const ax of ['x', 'y', 'z']) {
+      const el = this.dom[ax];
+      if (el) el.disabled = this.locks[ax];
+    }
+  }
+
   syncInputs() {
     const s = this.state;
     this.dom.cx.value = String(Math.round(s.cx * 20));
@@ -503,16 +517,19 @@ export class SliceTool {
   _bindDom() {
     const d = this.dom;
     d.cx.addEventListener('input', (e) => {
+      if (this.locks.x) return;
       this.state.cx = +e.target.value / 20;
       d.cxLabel.textContent = this.state.cx.toFixed(2);
       this.update();
     });
     d.cy.addEventListener('input', (e) => {
+      if (this.locks.y) return;
       this.state.cy = +e.target.value / 20;
       d.cyLabel.textContent = this.state.cy.toFixed(2);
       this.update();
     });
     d.cz.addEventListener('input', (e) => {
+      if (this.locks.z) return;
       this.state.cz = +e.target.value / 20;
       d.czLabel.textContent = this.state.cz.toFixed(2);
       this.update();
@@ -866,9 +883,9 @@ export class SliceTool {
           const mx = hitPoint.x - d.point.x;
           const my = hitPoint.y - d.point.y;
           const mz = hitPoint.z - d.point.z;
-          this.state.cx = d.cx + mx;
-          this.state.cy = d.cy + my;
-          this.state.cz = d.cz + mz;
+          if (!this.locks.x) this.state.cx = d.cx + mx;
+          if (!this.locks.y) this.state.cy = d.cy + my;
+          if (!this.locks.z) this.state.cz = d.cz + mz;
         }
       }
       this.update();

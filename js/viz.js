@@ -173,6 +173,9 @@ export class FieldViz {
   /* ---- 箭头场 ---- */
   buildArrows(o, box) {
     const { solver, field } = o;
+    // 体块被压成 0 时 span=0 → s=∞ → 网格循环无限跑（会卡死页面）
+    if (!(box.max[0] - box.min[0] > 1e-6) || !(box.max[1] - box.min[1] > 1e-6) ||
+        !(box.max[2] - box.min[2] > 1e-6)) { this.zero = true; return; }
     const fn = makeFieldFn(field, solver);
     const span = [
       box.max[0] - box.min[0],
@@ -363,6 +366,8 @@ export class FieldViz {
   /* ---- 流线 ---- */
   buildStreams(o, box) {
     const { solver, field } = o;
+    if (!(box.max[0] - box.min[0] > 1e-6) || !(box.max[1] - box.min[1] > 1e-6) ||
+        !(box.max[2] - box.min[2] > 1e-6)) { this.zero = true; return; }
     const fn = makeFieldFn(field, solver);
     const density = o.density ?? 0.5;
     const nLines = Math.round((field === 'E' ? 14 : 10) + density * (field === 'E' ? 100 : 68));

@@ -37,6 +37,7 @@ const state = {
   colorByPot: true,
   interior: false,     // 是否画导体内部的场
   boxLock: { x: false, y: false, z: false },   // 锁定后拖动截取框不会改这一轴
+  sliceLock: { x: false, y: false, z: false }, // 截面中心的锁
   autoRotate: false,
   wireRadius: 0.05,     // 世界单位（1 单位 = 1 cm）
   analysisOn: false,
@@ -70,6 +71,8 @@ slicePane.attachOutline();
 const boxGizmo = new BoxGizmo(scene3d, {
   onChange: (b) => {
     slicePane.setWorldBox(b.min, b.max);
+    // 锁住的轴要「回弹」：不然框照样被拖走，看着就像锁没生效
+    boxGizmo.setBox(slicePane.worldBox);
     syncSpInputs();
   },
 });
@@ -371,6 +374,23 @@ for (const ax of ['x', 'y', 'z']) {
     const rng = $(LOCK_SLIDER[ax]);
     if (rng) rng.disabled = state.boxLock[ax];
     slicePane.setLocks(state.boxLock);
+
+// 截面窗口的中心轴锁
+const SLICE_SLIDER = { x: 'sw-cx', y: 'sw-cy', z: 'sw-cz' };
+for (const ax of ['x', 'y', 'z']) {
+  const btn = $('sw-lock-' + ax);
+  if (!btn) continue;
+  btn.addEventListener('click', (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    state.sliceLock[ax] = !state.sliceLock[ax];
+    btn.classList.toggle('on', state.sliceLock[ax]);
+    const rng = $(SLICE_SLIDER[ax]);
+    if (rng) rng.disabled = state.sliceLock[ax];
+    slice.setLocks(state.sliceLock);
+  });
+}
+slice.setLocks(state.sliceLock);
   });
 }
 slicePane.setLocks(state.boxLock);
@@ -794,16 +814,49 @@ function runSelfTest() {
       slicePane.setWorldBox([min0[0] + 2, min0[1], min0[2]], [max0[0] + 2, max0[1], max0[2]]);
       ok(Math.abs(slicePane.box.cx - cx0) < 1e-9, '锁定 X 后拖动不改中心 X');
 
+      // 拖动后框要回弹到锁定后的位置（否则看着就像锁没生效）
+      boxGizmo.setBox(slicePane.worldBox);
+      ok(Math.abs(boxGizmo.box.min[0] - slicePane.worldBox.min[0]) < 1e-9,
+        '锁定后 3D 框回弹到不动的那个位置');
+
       state.boxLock.x = false;
       slicePane.setLocks(state.boxLock);
       slicePane.setWorldBox([min0[0] + 2, min0[1], min0[2]], [max0[0] + 2, max0[1], max0[2]]);
       ok(Math.abs(slicePane.box.cx - cx0 - 2) < 0.05, '解锁后拖动恢复修改中心 X');
 
       slicePane.setWorldBox(min0, max0);
+      boxGizmo.setBox(slicePane.worldBox);
+
+      // 尺寸压到 0 也不能把页面卡住
+      slicePane.setBox({ sx: 0, sy: 0, sz: 0 });
+      ok(slicePane.box.sx >= 0.004 && slicePane.box.sy >= 0.004 && slicePane.box.sz >= 0.004,
+        '尺寸钳到最小值（0 不卡死）');
+      slicePane.setWorldBox(min0, max0);
+      boxGizmo.setBox(slicePane.worldBox);
     } catch (err) {
       ok(false, '锁定轴测试抛错', String(err.message).slice(0, 80));
       state.boxLock.x = false;
       slicePane.setLocks(state.boxLock);
+    }
+
+    // 9.585 截面中心锁
+    try {
+      const cx0 = slice.state.cx;
+      state.sliceLock.x = true;
+      slice.setLocks(state.sliceLock);
+      // 模拟三维拖动：绕过事件，直接调内部逻辑做不到，这里验证滑杆路径
+      slice.dom.cx.value = '0';
+      slice.dom.cx.dispatchEvent(new Event('input'));
+      ok(Math.abs(slice.state.cx - cx0) < 1e-9, '截面锁定 X 后滑杆不改中心 X');
+      state.sliceLock.x = false;
+      slice.setLocks(state.sliceLock);
+      slice.dom.cx.dispatchEvent(new Event('input'));
+      ok(Math.abs(slice.state.cx) < 1e-6, '截面解锁后滑杆恢复');
+      slice.state.cx = cx0;
+    } catch (err) {
+      ok(false, '截面锁定测试抛错', String(err.message).slice(0, 80));
+      state.sliceLock.x = false;
+      slice.setLocks(state.sliceLock);
     }
 
     // 9.59 面板里的导体内部箭头

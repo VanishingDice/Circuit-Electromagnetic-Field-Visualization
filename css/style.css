@@ -493,6 +493,7 @@ input[type=range]::-webkit-slider-thumb {
   cursor: pointer;
 }
 .lockbtn:hover { color: var(--fg); }
+.lockbtn svg { display: block; }
 .lockbtn.on {
   color: #0a1016;
   background: #6ee7a8;
