@@ -1,0 +1,17 @@
+# 构建产物（由 tools/build_single.py 生成，不入库）
+em-field-lab.html
+
+# 临时截图 / 调试输出
+/shots/
+*.tmp
+*.log
+t*.png
+dbg*.png
+selftest*.png
+
+# 依赖与系统文件
+node_modules/
+.DS_Store
+Thumbs.db
+__pycache__/
+*.pyc

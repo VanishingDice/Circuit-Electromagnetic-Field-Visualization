@@ -1,0 +1,176 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>电磁场实验台 · EM Field Lab</title>
+<link rel="stylesheet" href="./css/style.css" />
+<script type="importmap">
+{
+  "imports": {
+    "three": "./lib/three.module.js",
+    "three/addons/": "./lib/addons/"
+  }
+}
+</script>
+</head>
+<body>
+<div id="app">
+  <header id="topbar">
+    <div class="brand">
+      <span class="logo"></span>
+      <div class="brand-text">
+        <h1>电磁场实验台</h1>
+        <p>搭一个直流电路，看三维空间里的 E、B、φ 和坡印廷矢量</p>
+      </div>
+    </div>
+
+    <div class="chips" id="field-chips">
+      <button class="chip active" data-field="B"><b>B</b><span>磁场</span></button>
+      <button class="chip" data-field="E"><b>E</b><span>电场</span></button>
+      <button class="chip" data-field="phi"><b>φ</b><span>电势</span></button>
+      <button class="chip" data-field="S"><b>S</b><span>能流</span></button>
+    </div>
+
+    <div class="chips small" id="mode-chips">
+      <button class="chip" data-mode="arrows">箭头</button>
+      <button class="chip" data-mode="stream">流线</button>
+      <button class="chip" data-mode="slice">切片</button>
+    </div>
+
+    <div class="topbar-actions">
+      <button id="btn-analysis" class="ghost" title="看清导线内部的能量流向">剖面</button>
+      <button id="btn-rotate" class="ghost" title="让相机缓慢旋转">环绕</button>
+      <button id="btn-edit" class="ghost" title="显示 / 隐藏电路编辑器">编辑器</button>
+      <button id="btn-help" class="ghost">说明</button>
+    </div>
+  </header>
+
+  <main id="workspace">
+    <section id="editorPane">
+      <div class="pane-head">
+        <div class="pane-title">电路图</div>
+        <div class="pane-hint">选元件 → 在格点间拖一条线</div>
+      </div>
+      <div class="palette" id="palette">
+        <button class="tool active" data-tool="select" title="点选元件修改参数">选择</button>
+        <button class="tool" data-tool="wire">导线</button>
+        <button class="tool" data-tool="resistor">电阻</button>
+        <button class="tool" data-tool="battery">电源</button>
+        <button class="tool" data-tool="capacitor">电容</button>
+        <button class="tool" data-tool="inductor">电感</button>
+      </div>
+      <div class="canvas-wrap">
+        <canvas id="editorCanvas"></canvas>
+      </div>
+      <div class="inspector" id="inspector">
+        <div class="empty">未选中元件</div>
+      </div>
+      <div class="pane-foot">
+        <button id="btn-reset" class="ghost">恢复默认电路</button>
+        <button id="btn-clear" class="ghost danger">清空</button>
+      </div>
+    </section>
+
+    <section id="viewport">
+      <div id="three-container"></div>
+
+      <div class="overlay legend" id="legend">
+        <div class="legend-title" id="legend-title">|B|</div>
+        <div class="legend-bar" id="legend-bar"></div>
+        <div class="legend-scale"><span id="legend-min">弱</span><span id="legend-max">强</span></div>
+      </div>
+
+      <div class="overlay stats" id="stats"></div>
+
+      <div class="overlay controls" id="controls">
+        <label class="ctl">
+          <span class="ctl-label" id="density-label">流线数量</span>
+          <input type="range" id="density" min="0" max="100" value="45" />
+        </label>
+        <label class="ctl">
+          <span class="ctl-label">不透明度</span>
+          <input type="range" id="opacity" min="15" max="100" value="95" />
+        </label>
+        <div class="ctl slice-only" id="slice-ctl">
+          <div class="seg" id="axis-seg">
+            <button data-axis="x">X</button>
+            <button data-axis="y" class="active">Y</button>
+            <button data-axis="z">Z</button>
+          </div>
+          <input type="range" id="slice-pos" min="-100" max="100" value="0" />
+        </div>
+        <label class="ctl">
+          <span class="ctl-label" id="wire-label">导线半径 0.50 mm</span>
+          <input type="range" id="wire-radius" min="1" max="14" value="5" />
+        </label>
+        <label class="switch">
+          <input type="checkbox" id="color-pot" checked />
+          <span>导体按电位着色</span>
+        </label>
+      </div>
+
+      <div class="overlay legend-hint" id="hint"></div>
+
+      <div class="overlay analysis hidden" id="analysis">
+        <div class="an-head">
+          <span>剖面 · |S|</span>
+          <button class="an-cycle">换一段</button>
+        </div>
+        <canvas width="210" height="210"></canvas>
+        <div class="an-legend">弱 → 强</div>
+        <div class="an-info"></div>
+        <div class="an-stats"></div>
+      </div>
+    </section>
+  </main>
+</div>
+
+<div id="help-modal" class="modal hidden">
+  <div class="modal-card">
+    <button class="modal-close" id="help-close">×</button>
+    <h2>这个页面在算什么</h2>
+    <p>
+      电路部分用节点法（MNA）解直流工作点，得到每个节点的电位和每条支路的电流。
+      场的部分：把导体离散成上千条线段，用<strong>边界元（MoM）</strong>解出导体表面的电荷分布——
+      这一步是整个页面的关键，因为导线周围的电场几乎全部由表面电荷决定，
+      而能量怎么流动（坡印廷矢量）又由电场和磁场共同决定。
+    </p>
+    <h3>四个场</h3>
+    <ul>
+      <li><b>E 电场</b>：−∇φ。导体内部沿着电流方向有微小电场（欧姆定律），外侧有较强的法向分量。</li>
+      <li><b>B 磁场</b>：每段载流导线用毕奥–萨伐尔公式精确积分叠加。</li>
+      <li><b>φ 电势</b>：边界元解出的标量电位场，切片上的等值线就是等势线。</li>
+      <li><b>S 坡印廷矢量</b>：S = E×H，能量的流动方向。注意能量<em>不</em>沿着导线内部走，而是从电池侧面流出、在空间里绕行、从侧面进入电阻。</li>
+    </ul>
+    <h3>直流约定</h3>
+    <p>
+      电感在直流下等效为短路（本页给它 0.01 Ω 的直流电阻），电容等效为开路——
+      两块极板各自停在自己所连节点的电位上，板间因此有静电场。
+      交流 / 瞬态是下一版的事。
+    </p>
+    <h3>操作</h3>
+    <ul>
+      <li>左侧选工具，在格点之间拖一条线放置元件；<b>选择</b>工具点元件可改参数。</li>
+      <li>右键删除元件。新端点落在旧线段中间时会自动打断，形成 T 形接点。</li>
+      <li>右侧 3D 视图：拖拽旋转、滚轮缩放、右键平移。</li>
+      <li>顶部四个 chip 切换要看哪个场，第二排切换显示方式。</li>
+    </ul>
+  </div>
+</div>
+
+<script>
+// 出错时把信息显示在页面上，方便排查（单文件版 / 直接开文件时尤其有用）
+window.addEventListener('error', (e) => {
+  // ResizeObserver 的这条是浏览器的良性提示，不弹横幅
+  if (String(e.message || '').includes('ResizeObserver')) return;
+  const box = document.createElement('pre');
+  box.id = 'fatal-error';
+  box.style.cssText = 'position:fixed;left:0;top:0;right:0;z-index:99999;margin:0;padding:14px 18px;background:#2a0d12;color:#ffb4aa;font:12px/1.6 monospace;white-space:pre-wrap;max-height:60vh;overflow:auto';
+  box.textContent = '运行出错：' + (e.message || e.error) + '\n\n' + ((e.error && e.error.stack) || '');
+  document.body.appendChild(box);
+});
+</script>
+<script type="module" src="./js/app.js"></script>
+</body>
+</html>
