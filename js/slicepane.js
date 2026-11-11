@@ -221,9 +221,9 @@ export class SlicePane {
     }, 90);
   }
 
-  update({ field, mode, density, opacity, colorByPotential, sliceAxis, slicePos }) {
+  update({ field, mode, density, opacity, colorByPotential, sliceAxis, slicePos, interior }) {
     if (!this.solver || !this.solver.n) return;
-    this._last = { field, mode, density, opacity, colorByPotential, sliceAxis, slicePos };
+    this._last = { field, mode, density, opacity, colorByPotential, sliceAxis, slicePos, interior };
     const box = this.worldBox;
     // 采样体块稍微放大一点，交给裁剪面去切，边缘才不会有硬边
     const pad = [
@@ -245,6 +245,7 @@ export class SlicePane {
       opacity: opacity ?? 0.95,
       sliceAxis,
       slicePos,
+      interior: !!interior,   // 导体内部的箭头也要画（之前这个参数被扔掉了）
       box: sampleBox,
     });
     this.scene.applyClipTo(this.scene.fieldGroup);

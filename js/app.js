@@ -106,6 +106,8 @@ function rebuild() {
 
     scene3d.setSolver(sceneData.solver);
     scene3d.setCircuit(sceneData.parts, sceneData.bounds, { colorByPotential: state.colorByPot, frame });
+    // setCircuit 会重建材质，幽灵模式（半透明）要重新应用一次，否则导体内部又被挡住
+    scene3d.setGhost(state.interior);
     updateViz();
     if (state.analysisOn) updateAnalysis();
     slicePane.setScene({
@@ -115,6 +117,7 @@ function rebuild() {
       colorByPotential: state.colorByPot,
       conductorR: state.wireRadius * METER_PER_UNIT,
     });
+    slicePane.scene.setGhost(state.interior);
     updatePane();
     boxGizmo.setBox(slicePane.worldBox);
     syncSpInputs();
@@ -755,6 +758,20 @@ function runSelfTest() {
       ok(true, '截取空间面板');
     } catch (err) {
       ok(false, '截取空间面板抛错', String(err.message).slice(0, 80));
+    }
+
+    // 9.59 面板里的导体内部箭头
+    try {
+      state.interior = true;
+      slicePane.update({
+        field: "B", mode: "arrows", density: 0.4, interior: true,
+        opacity: 0.95, sliceAxis: "y", slicePos: 0,
+      });
+      const ia = slicePane.viz.interiorArrows;
+      ok(!!ia && ia.count > 0, `面板内部箭头 count=${ia ? ia.count : "none"}`);
+      state.interior = false;
+    } catch (err) {
+      ok(false, "面板内部箭头测试抛错", String(err.message).slice(0, 80));
     }
 
     // 9.6 截面窗口的立体视图

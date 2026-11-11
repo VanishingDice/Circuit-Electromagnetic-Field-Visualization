@@ -21,7 +21,7 @@ $shots = @(
   @{ name = "slice-3d";      q = "?field=S&mode=stream&editor=0&slice=1&mode3d=1&circuit=simple" },
   @{ name = "pane-arrows";   q = "?field=S&mode=arrows&density=60" },
   @{ name = "simple-loop";   q = "?circuit=simple&field=S&mode=stream&editor=0" },
-  @{ name = "interior";      q = "?circuit=simple&field=S&mode=stream&editor=0&inside=1" },
+  @{ name = "interior";      q = "?circuit=simple&field=B&mode=arrows&editor=0&inside=1&wire=12&spcx=20&spcz=15&spsx=2&spsy=2&spsz=2&spcy=0" },
   @{ name = "editor";        q = "?field=B&mode=stream" }
 )
 

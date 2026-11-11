@@ -226,6 +226,7 @@ export class FieldViz {
     const mat = new THREE.MeshBasicMaterial({ vertexColors: false, transparent: true, opacity: o.opacity ?? 0.9 });
     const mesh = new THREE.InstancedMesh(geo, mat, keep.length);
     mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+    mesh.frustumCulled = false;   // 实例散在整场，包围球在原点 → 否则会被误剔除
 
     const dummy = new THREE.Object3D();
     const up = new THREE.Vector3(0, 1, 0);
@@ -332,9 +333,12 @@ export class FieldViz {
 
     const geo = makeArrowGeometry();
     const mat = new THREE.MeshBasicMaterial({
-      color: 0xffb347, transparent: true, opacity: 0.95, depthWrite: false,
+      color: 0xff5fd0, transparent: true, opacity: 1.0, depthWrite: false,
     });
     const mesh = new THREE.InstancedMesh(geo, mat, items.length);
+    // 实例散布在整个场景里，但几何体的包围球在原点：不关掉视锥剔除，
+    // 相机一移开原点整个网格就会被剔除（面板里看不到内部箭头就是这个原因）
+    mesh.frustumCulled = false;
     const dummy = new THREE.Object3D();
     const up = new THREE.Vector3(0, 1, 0);
     const qq = new THREE.Quaternion();
