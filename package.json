@@ -1,6 +1,6 @@
 {
   "name": "em-field-lab",
-  "version": "0.24.0",
+  "version": "0.25.0",
   "private": true,
   "type": "module",
   "description": "电路元件的三维电磁场可视化工作台（可离线运行）"

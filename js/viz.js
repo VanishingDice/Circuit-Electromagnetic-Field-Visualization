@@ -376,7 +376,7 @@ export class FieldViz {
     );
     const sizeK = Math.max(0.18, Math.min(1, span0 / 4));
     const nLines = Math.round(
-      ((field === 'E' ? 14 : 10) + density * (field === 'E' ? 100 : 68)) * sizeK
+      ((field === 'E' ? 20 : 16) + density * (field === 'E' ? 140 : 110)) * sizeK
     );
 
     // ---- 等间距撒线（Jobard–Lefer 的思路）----
@@ -387,7 +387,8 @@ export class FieldViz {
     );
     const sep0 = Math.max(0.008, spanMin / (16 + density * 54));
     const stepH = Math.max(0.003, Math.min(0.075, spanMin / 60));
-    let candidates = this.makeSeeds(solver, box, Math.round(nLines * 8), field, sep0);
+    // 站点数直接由目标条数决定（每个站点 3 圈），这样沿导线的间距天然是均匀的
+    let candidates = this.makeSeeds(solver, box, nLines, field, sep0);
     if (o.interior && field !== 'phi') {
       candidates = candidates.concat(this.makeInteriorSeeds(solver, box, Math.round(nLines * 0.35)));
     }
@@ -610,8 +611,9 @@ export class FieldViz {
     }
     if (!cand.length || total <= 0) return [];
 
-    // 撒点半径要跟着采样盒子走：吸附到细导线后盒子只有一两毫米，
-    // 用固定的 0.2~1 格半径会让种子全部落在盒外（只剩几根线）
+    // ---- 沿导线等距取点（不是随机撒）----
+    // 把候选导体拉成一条「弧长轴」，在上面等距布站点；每个站点再按几个固定半径
+    // 种一圈。这样同一条导线上的环间距是均匀的，半径也是分层整齐的。
     const spanMin = Math.min(
       box.max[0] - box.min[0],
       box.max[1] - box.min[1],
@@ -619,19 +621,24 @@ export class FieldViz {
     );
     // 种子半径不能贴着盒子边缘：那样线一生成就出界，只剩一小段
     const rMax = Math.max(0.008, Math.min(1.05, spanMin * 0.22));
-    const radii = [0.32, 0.58, 0.8, 1.0];
+
+    // 每个站点种几圈：沿导线方向要密，横向分层少一点
+    const N_RADII = 3;
+    const nStations = Math.max(1, Math.round(n / N_RADII));
+    const ds = total / nStations;
+
     const seeds = [];
-    let guard = 0;
-
-    for (let i = 0; seeds.length < n && guard < n * 6; i++, guard++) {
-      // 按长度分摊：第 i 条种子落在累积长度的 i*φ 处
-      const target = fract(i * PHI + 0.1234) * total;
+    // 按低差异顺序访问站点（而不是从 0 顺着来）：
+    // 上层只会接受前 nLines 条，顺序访问会让线全挤在电路最前面那几段导线上
+    for (let idx = 0; idx < nStations; idx++) {
+      const a = Math.floor(fract(idx * PHI) * nStations);
+      const sArc = (a + 0.5) * ds;
       let ci = 0;
-      while (ci < cum.length - 1 && cum[ci] < target) ci++;
+      while (ci < cum.length - 1 && cum[ci] < sArc) ci++;
       const k = cand[ci];
+      const segStart = ci === 0 ? 0 : cum[ci - 1];
+      const t = Math.max(0, Math.min(1, (sArc - segStart) / Math.max(solver.len[k], 1e-12)));
 
-      // 沿该段的相对位置：另一条无理数序列，避免和选段相关
-      const t = fract(i * 0.7548776662466927 + 0.2718);
       const i3 = 3 * k;
       const x0 = solver.p0[i3], y0 = solver.p0[i3 + 1], z0 = solver.p0[i3 + 2];
       const x1 = solver.p1[i3], y1 = solver.p1[i3 + 1], z1 = solver.p1[i3 + 2];
@@ -641,37 +648,28 @@ export class FieldViz {
       const e1 = norm(cross(dir, ref));
       const e2 = cross(dir, e1);
 
-      // base 在米制，先换成世界单位，再叠加世界单位下的偏移
-      const bx = base[0] * M2W, by = base[1] * M2W, bz = base[2] * M2W;
-      // 该段导体的绘制半径（世界单位）
       const radW = (solver.rad ? solver.rad[k] : solver.conductorRadius) * M2W;
-      // 上限必须是「盒子放得下」和「导体外面」两者取小：
-      // 吸附到细导线后盒子只有一两毫米，如果沿用固定的 0.2~1 格半径，
-      // 种子会全部落在盒外或者贴着导体被拒 → 只剩几条线
       const hi = Math.max(radW * 1.6, Math.min(rMax, radW * 12));
-      // 半径下限至少和「线间距」一个量级：否则细到线圈那种小半径导体，
-      // 一圈圈挤在一起，看起来就是一团乱麻
       const lo = Math.min(hi * 0.92, Math.max(radW * 1.5, sep * 0.55));
-      let r;
-      if (field === 'E') {
-        r = lo + (hi - lo) * halton(i, 3);
-      } else {
-        const f = radii[Math.floor(halton(i, 5) * radii.length) % radii.length];
-        r = lo + (hi - lo) * f;
-      }
-      const th = i * GOLDEN_ANGLE;
-      const ca = Math.cos(th) * r, sa = Math.sin(th) * r;
-      const p = [
-        bx + e1[0] * ca + e2[0] * sa,
-        by + e1[1] * ca + e2[1] * sa,
-        bz + e1[2] * ca + e2[2] * sa,
-      ];
 
-      if (p[0] < box.min[0] || p[0] > box.max[0]) continue;
-      if (p[1] < box.min[1] || p[1] > box.max[1]) continue;
-      if (p[2] < box.min[2] || p[2] > box.max[2]) continue;
-      if (nearestConductorRatio(solver, p[0] * W2M, p[1] * W2M, p[2] * W2M) < 1.2) continue;
-      seeds.push(p);
+      // 站点之间交错一下起始方位，线不至于全从一个方向「长出来」
+      const th = a * GOLDEN_ANGLE;
+      for (let q = 0; q < N_RADII; q++) {
+        const f = N_RADII === 1 ? 0.5 : q / (N_RADII - 1);
+        const r = lo + (hi - lo) * f;
+        const ca = Math.cos(th) * r, sa = Math.sin(th) * r;
+        const bx = base[0] * M2W, by = base[1] * M2W, bz = base[2] * M2W;
+        const p = [
+          bx + e1[0] * ca + e2[0] * sa,
+          by + e1[1] * ca + e2[1] * sa,
+          bz + e1[2] * ca + e2[2] * sa,
+        ];
+        if (p[0] < box.min[0] || p[0] > box.max[0]) continue;
+        if (p[1] < box.min[1] || p[1] > box.max[1]) continue;
+        if (p[2] < box.min[2] || p[2] > box.max[2]) continue;
+        if (nearestConductorRatio(solver, p[0] * W2M, p[1] * W2M, p[2] * W2M) < 1.2) continue;
+        seeds.push(p);
+      }
     }
     return seeds;
   }
