@@ -43,6 +43,7 @@ const state = {
 };
 
 const circuit = createDefaultCircuit();
+let forceFrame = true;      // 下一次 rebuild 是否重新取景
 let solution = null;
 let sceneData = null;
 let lastCount = -1;
@@ -95,7 +96,10 @@ function rebuild() {
     const t2 = performance.now();
     editor.setSolution(solution);
 
-    const frame = !sceneData.empty && circuit.elements.length !== lastCount;
+    // 只有首次加载或用户主动「载入预设」才重新取景；
+    // 平时增删元件保持当前视角，不要跳回默认机位
+    const frame = forceFrame && !sceneData.empty;
+    forceFrame = false;
     lastCount = circuit.elements.length;
 
     scene3d.setSolver(sceneData.solver);
@@ -421,11 +425,17 @@ $('btn-simple').addEventListener('click', () => {
   circuit.elements = createSimpleLoop().elements;
   sel = null;
   lastCount = -1;
+  forceFrame = true;
   rebuild();
+});
+
+$('btn-view').addEventListener('click', () => {
+  if (sceneData && sceneData.bounds) scene3d.frameTo(sceneData.bounds);
 });
 
 $('btn-reset').addEventListener('click', () => {
   const fresh = createDefaultCircuit();
+  forceFrame = true;
   circuit.elements = fresh.elements;
   lastCount = -1;
   editor.select(null);
@@ -664,6 +674,23 @@ function runSelfTest() {
       ok(true, '拖动截取框 setWorldBox');
     } catch (err) {
       ok(false, '拖动截取框抛错', String(err.message).slice(0, 80));
+    }
+
+    // 9.554 增删元件后不要跳视角
+    try {
+      scene3d.frameTo(sceneData.bounds);
+      const camBefore = scene3d.camera.position.clone();
+      const n0 = circuit.elements.length;
+      circuit.elements.push({
+        id: newId(), type: 'wire', a: [1, 1], b: [2, 1], value: 0,
+      });
+      rebuild();
+      const moved = scene3d.camera.position.distanceTo(camBefore);
+      ok(moved < 1e-6, `增删元件后视角不变（位移 ${moved.toExponential(1)}）`);
+      circuit.elements.length = n0;
+      rebuild();
+    } catch (err) {
+      ok(false, '视角保持测试抛错', String(err.message).slice(0, 80));
     }
 
     // 9.555 导体内部：箭头 + 流线都要能渲染（曾经因为漏写方法直接抛错）
