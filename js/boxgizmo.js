@@ -73,24 +73,6 @@ export class BoxGizmo {
     this.moveGroup.add(this.centerHandle);
     this.handles.push(this.centerHandle);
 
-    const barGeo = new THREE.CylinderGeometry(0.075, 0.075, 1, 8);
-    this.moveBars = [];
-    for (const [rot, color] of [
-      [[0, 0, -Math.PI / 2], 0xff7b7b],
-      [[0, 0, 0], 0x7bffa8],
-      [[Math.PI / 2, 0, 0], 0x7bb6ff],
-    ]) {
-      const b = new THREE.Mesh(barGeo, new THREE.MeshBasicMaterial({
-        color, transparent: true, opacity: 0.9, depthTest: false,
-      }));
-      b.rotation.set(rot[0], rot[1], rot[2]);
-      b.renderOrder = 30;
-      b.userData = { kind: 'move' };
-      this.moveGroup.add(b);
-      this.handles.push(b);
-      this.moveBars.push(b);
-    }
-
     this.raycaster = new THREE.Raycaster();
     this.pointer = new THREE.Vector2();
   }
@@ -113,16 +95,6 @@ export class BoxGizmo {
     this.edges.scale.set(s[0], s[1], s[2]);
 
     const hs = Math.min(0.4, Math.max(0.1, Math.min(s[0], s[1], s[2]) * 0.18));
-    // 三根轴杆：沿各自轴伸出，长度随把手尺寸
-    if (this.moveBars) {
-      const dirs = [[1, 0, 0], [0, 1, 0], [0, 0, 1]];
-      this.moveBars.forEach((b, i) => {
-        const d = dirs[i];
-        const L = hs * 3.4;
-        b.position.set(d[0] * L * 0.5, d[1] * L * 0.5, d[2] * L * 0.5);
-        b.scale.set(hs * 0.9, L, hs * 0.9);
-      });
-    }
     for (const h of this.handles) {
       if (h.userData.kind === 'face') {
         const { axis, sign } = h.userData;

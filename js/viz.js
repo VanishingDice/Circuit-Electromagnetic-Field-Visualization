@@ -264,12 +264,13 @@ export class FieldViz {
     this.arrows = mesh;
     this.lastStats = { count: keep.length, norm, mags, lo: loCut, hi: hiCut };
 
-    // 导体内部的场：E 沿导线、B 绕轴、S 指向轴心
-    if (o.interior && field !== 'phi') this.buildInteriorArrows(o, field);
+    // 导体内部的场：E 沿导线、B 绕轴、S 指向轴心。
+    // 步长用和外侧网格一样的 1/s，密度才一致
+    if (o.interior && field !== 'phi') this.buildInteriorArrows(o, field, 1 / s);
   }
 
   /* ---- 导体内部的箭头（尺度跟着导体半径走） ---- */
-  buildInteriorArrows(o, field) {
+  buildInteriorArrows(o, field, spacing = 0.2) {
     const solver = o.solver;
     const E = [0, 0, 0], B = [0, 0, 0], S = [0, 0, 0];
     const items = [];
@@ -296,15 +297,19 @@ export class FieldViz {
         u[0] * e1[1] - u[1] * e1[0],
       ];
 
-      // 沿轴取几个位置，每个位置在 4 个方位上放箭头（都在导体里）
-      const nAlong = Math.max(1, Math.min(3, Math.round(L / (a * 4))));
+      // 沿轴按「和外侧相同的空间步长」取位置；方位数也按周长/步长定，
+      // 这样内部和外部的箭头密度看起来是一致的
+      const Lw = L * M2W;                       // 段长（世界单位）
+      const aW = a * M2W;                       // 半径（世界单位）
+      const nAlong = Math.max(1, Math.min(40, Math.round(Lw / spacing)));
+      const nAz = Math.max(3, Math.min(16, Math.round((2 * Math.PI * aW) / spacing)));
       for (let q = 0; q < nAlong; q++) {
         const t = (q + 0.5) / nAlong;
         const bx = p0[0] + (p1[0] - p0[0]) * t;
         const by = p0[1] + (p1[1] - p0[1]) * t;
         const bz = p0[2] + (p1[2] - p0[2]) * t;
-        for (let az = 0; az < 4; az++) {
-          const th = (az / 4) * Math.PI * 2 + k * 0.7;
+        for (let az = 0; az < nAz; az++) {
+          const th = (az / nAz) * Math.PI * 2 + k * 0.7;
           const r = a * 0.55;
           const px = bx + e1[0] * Math.cos(th) * r + e2[0] * Math.sin(th) * r;
           const py = by + e1[1] * Math.cos(th) * r + e2[1] * Math.sin(th) * r;
@@ -325,7 +330,7 @@ export class FieldViz {
           });
         }
       }
-      if (items.length > 2000) break;
+      if (items.length > 6000) break;
     }
     if (!items.length) return;
 

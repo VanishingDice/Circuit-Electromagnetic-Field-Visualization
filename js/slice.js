@@ -187,6 +187,8 @@ export class SliceTool {
     this.state.visible = v;
     this.group.visible = v;
     this.dom.win.classList.toggle('hidden', !v);
+    // 通知外部（工具栏按钮要跟着亮/灭）
+    if (this.onVisible) this.onVisible(v);
     if (!v) { this.gen++; return; }
     this.syncInputs();
     this.update();
@@ -608,7 +610,8 @@ export class SliceTool {
     this.tex3.needsUpdate = true;
     this.tex3N = 1;
     this.mat3 = new THREE.MeshBasicMaterial({
-      map: this.tex3, side: THREE.DoubleSide, transparent: true, opacity: 0.97,
+      // 必须不透明：透明材质排在不透明物体之后渲染，会把箭头整个盖住
+      map: this.tex3, side: THREE.DoubleSide,
     });
     // 采样范围是 ±size（几何体 2×2 再缩放），这里必须用 2×2 的平面，
     // 否则贴图会被放大一倍，和箭头对不上（就是「紫色区域错位」的来源）
@@ -767,16 +770,20 @@ export class SliceTool {
     // 另外关掉深度测试：箭头有一半埋在贴图平面里，会看不见
     // 箭头颜色和贴图同源，直接画会在同色背景上「隐身」，
     // 所以画两遍：先画一层放大的深色描边，再叠上本色
-    const mkMesh = (color, grow, zoff, order) => {
+    const mkMesh = (color, grow, zoff, order, side) => {
       const m = new THREE.InstancedMesh(
         this.geo3,
-        new THREE.MeshBasicMaterial({ color, depthTest: true }),
+        // 描边用背面渲染：只留下轮廓，不会把本体颜色整个盖住
+        new THREE.MeshBasicMaterial({ color, side: side ?? THREE.FrontSide }),
         items.length
       );
       m.renderOrder = order;
       return { mesh: m, grow, zoff };
     };
-    const pass = [mkMesh(0x0a0f16, 1.18, -0.004 * S, 9), mkMesh(0xffffff, 1.0, 0, 10)];
+    const pass = [
+      mkMesh(0x0a0f16, 1.32, 0, 9, THREE.BackSide),
+      mkMesh(0xffffff, 1.0, 0, 10, THREE.FrontSide),
+    ];
 
     const dummy = new THREE.Object3D();
     const up = new THREE.Vector3(0, 1, 0);
@@ -792,9 +799,18 @@ export class SliceTool {
       dir.normalize();
       q.setFromUnitVectors(up, dir);
       const L = step * (0.34 + 0.42 * t);
+      // 不用背景色标：同色会「隐身」。改成「浅色本体 + 深色描边」，
+      // 幅值靠长度编码，色相只留一点点提示（弱偏蓝、强偏橙）
       const nm = this._texNorm || this.norm;
       const cc = nm ? nm.color(it.m) : turbo3(t);
-      col.setRGB(cc[0], cc[1], cc[2], THREE.SRGBColorSpace);
+      const MIX = 0.3;
+      const base = 0.72 + 0.28 * t;
+      col.setRGB(
+        base * (1 - MIX) + cc[0] * MIX,
+        base * (1 - MIX) + cc[1] * MIX,
+        base * (1 - MIX) + cc[2] * MIX,
+        THREE.SRGBColorSpace
+      );
 
       for (const { mesh, grow, zoff } of pass) {
         dummy.position.set(
@@ -803,7 +819,7 @@ export class SliceTool {
           it.d[2] * L * 0.5 + zoff
         );
         dummy.quaternion.copy(q);
-        dummy.scale.set(L * 0.26 * grow, L * grow, L * 0.26 * grow);
+        dummy.scale.set(L * 0.3 * grow, L * grow, L * 0.3 * grow);
         dummy.updateMatrix();
         mesh.setMatrixAt(k, dummy.matrix);
         if (grow === 1.0) mesh.setColorAt(k, col);

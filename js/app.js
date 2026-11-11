@@ -368,6 +368,16 @@ const syncSliceInputs = () => {
 };
 slice.onChange = syncSliceInputs;
 
+// 整体缩放：三个方向一起变
+$('sp-scale')?.addEventListener('input', (e) => {
+  const v = +e.target.value / 10;
+  slicePane.setBox({ sx: v, sy: v, sz: v });
+  boxGizmo.setBox(slicePane.worldBox);
+  syncSpInputs();
+  clearTimeout(window.__spfit);
+  window.__spfit = setTimeout(() => slicePane.frame(), 220);
+});
+
 const spBind = (id, key, scale) => {
   const el = $(id);
   if (!el) return;
@@ -452,6 +462,12 @@ $('sp-density')?.addEventListener('input', (e) => {
   window.__pdv = setTimeout(updatePane, 140);
 });
 
+// 窗口被 × 关掉时，工具栏按钮自动熄灭
+slice.onVisible = (v) => {
+  state.sliceOn = v;
+  $('btn-slice').classList.toggle('active', v);
+};
+
 $('btn-slice').addEventListener('click', () => {
   state.sliceOn = !state.sliceOn;
   $('btn-slice').classList.toggle('active', state.sliceOn);
@@ -477,6 +493,11 @@ $('wire-radius').addEventListener('input', (e) => {
   state.wireRadius = +e.target.value / 100;   // 1..14 → 0.01..0.14
   $('wire-label').textContent = `导线半径 ${(state.wireRadius * 10).toFixed(2)} mm`;
   if ($('sp-density')) $('sp-density').value = String(Math.round(state.paneDensity * 100));
+  if ($('sp-scale')) {
+    const b = slicePane.box;
+    const avg = (b.sx + b.sy + b.sz) / 3;
+    $('sp-scale').value = String(Math.round(Math.max(0.1, avg) * 10));
+  }
   clearTimeout(window.__wr);
   window.__wr = setTimeout(() => scheduleRebuild(false), 120);
 });
