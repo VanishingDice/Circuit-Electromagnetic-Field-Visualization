@@ -404,9 +404,11 @@ export class FieldViz {
     const span0 = Math.min(
       box.max[0] - box.min[0], box.max[1] - box.min[1], box.max[2] - box.min[2]
     );
-    const sizeK = Math.max(0.18, Math.min(1, span0 / 4));
+    // 不再按采样范围砍条数：以前是为了防止「糊成一团」，
+    // 但现在改用等距站点撒点后，线的疏密由间距控制，多加几条不会堆在一起。
+    // 砍条数的后果就是「放大后没有足够数量的流线」。
     const nLines = Math.round(
-      ((field === 'E' ? 20 : 16) + density * (field === 'E' ? 140 : 110)) * sizeK
+      (field === 'E' ? 20 : 16) + density * (field === 'E' ? 140 : 110)
     );
 
     // ---- 等间距撒线（Jobard–Lefer 的思路）----
