@@ -171,10 +171,19 @@ function updatePane() {
     slicePos: state.slicePos,
   });
   const info = FIELD_INFO[state.field];
+  const st = slicePane.viz.lastStats && slicePane.viz.lastStats.stat;
+  const ss = st && st.seedStat;
+  let dbg = '';
+  if (st) {
+    dbg = `  [${st.acc}/${st.nLines} cand=${st.cand}`;
+    if (ss) dbg += ` st=${ss.stations} out=${ss.outBox} near=${ss.nearCond}`;
+    dbg += ']';
+  }
   const inBox = slicePane._hasConductor !== false;
   $('sp-sub').textContent = inBox
     ? `${info.label} · ${MODE_LABEL[state.mode]} · 体块内加密采样`
     : `${info.label} · ${MODE_LABEL[state.mode]} · 体块里没有导体`;
+  if (state.debugStats) $('sp-sub').textContent += dbg;
 }
 
 function updateViz() {
@@ -195,6 +204,9 @@ function updateViz() {
     $('hint').textContent = '当前场强近似为零：电路里没有电流（或没有电荷），所以画不出场';
   }
   const t = $('stats');
+  const st = viz.lastStats && viz.lastStats.stat;
+  if (st) t.dataset.debug = `n=${st.nLines} cand=${st.cand} acc=${st.acc} `
+    + `seed=${st.rejSeed} short=${st.rejShort} close=${st.rejClose} sep=${st.sep.toFixed(3)}`;
   const n = viz.lastStats?.count ?? viz.lastStats?.lines ?? viz.lastStats?.N ?? 0;
   if (n) t.dataset.samples = n;
 }
@@ -595,6 +607,7 @@ const qs = new URLSearchParams(location.search);
     }
   }
   if (qs.get('seeds') === 'uniform') viz.seedMode = 'uniform';
+  if (qs.get('dbg') === '1') state.debugStats = true;
   if (qs.get('circuit') === 'simple') circuit.elements = createSimpleLoop().elements;
   if (qs.get('inside') === '1') state.interior = true;
   if (qs.get('wire')) state.wireRadius = Math.min(0.14, Math.max(0.01, +qs.get('wire') / 100));
@@ -892,6 +905,37 @@ function runSelfTest() {
       ok(false, '截面锁定测试抛错', String(err.message).slice(0, 80));
       state.sliceLock.x = false;
       slice.setLocks(state.sliceLock);
+    }
+
+    // 9.588 面板：吸附到导线后，内部箭头必须存在
+    try {
+      slicePane.snapToWire();
+      const wb = slicePane.worldBox;
+      let has = false;
+      for (let k = 0; k < sceneData.solver.n && !has; k++) {
+        const i3 = 3 * k;
+        const x = sceneData.solver.p0[i3] * 100, y = sceneData.solver.p0[i3 + 1] * 100, z = sceneData.solver.p0[i3 + 2] * 100;
+        has = x >= wb.min[0] && x <= wb.max[0] && y >= wb.min[1] && y <= wb.max[1] && z >= wb.min[2] && z <= wb.max[2];
+      }
+      ok(has, '吸附后体块里确实有导体');
+      state.interior = true;
+      slicePane.update({
+        field: 'B', mode: 'arrows', density: 0.45, interior: true,
+        opacity: 0.95, sliceAxis: 'y', slicePos: 0,
+      });
+      const ia2 = slicePane.viz.interiorArrows;
+      ok(!!ia2 && ia2.count > 0, `面板内部箭头 count=${ia2 ? ia2.count : 'none'}`);
+      slicePane.update({
+        field: 'B', mode: 'stream', density: 0.45, interior: false,
+        opacity: 0.95, sliceAxis: 'y', slicePos: 0,
+      });
+      const st = slicePane.viz.lastStats && slicePane.viz.lastStats.stat;
+      ok(!!st && st.acc >= 8, `面板流线条数 ${st ? st.acc : '?'} ≥ 8`);
+      state.interior = false;
+      slicePane.snapToWire();
+    } catch (err) {
+      ok(false, '面板内部箭头/流线测试抛错', String(err.message).slice(0, 80));
+      state.interior = false;
     }
 
     // 9.59 面板里的导体内部箭头

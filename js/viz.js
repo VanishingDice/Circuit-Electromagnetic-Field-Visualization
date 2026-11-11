@@ -431,14 +431,19 @@ export class FieldViz {
     const marks = [];
     const tmp = [0, 0, 0];
     const accepted = [];
+    const stat = {
+      cand: candidates.length, seeds: 0, acc: 0, rejSeed: 0, rejShort: 0, rejClose: 0,
+      seedStat: this._seedStat || null,
+    };
 
     for (const sd of candidates) {
       if (accepted.length >= nLines) break;
+      stat.seeds++;
       const inside = !!(sd && sd.inside);
       const seed = inside ? sd.p : sd;
 
       // 先看种子点：太挤就直接跳过（便宜，能挡掉大部分候选）
-      if (!inside && nearOccupied(seed, sep * 0.85)) continue;
+      if (!inside && nearOccupied(seed, sep * 0.85)) { stat.rejSeed++; continue; }
 
       // 导体外面的场线不穿进导体；导体内部的场线本来就在里面，所以不设终止条件，
       // 步长也要按导体尺度缩小（导线只有 0.5mm，用 0.075 格的步长直接跨出去了）
@@ -447,7 +452,7 @@ export class FieldViz {
       const line = inside
         ? integrate(fn, seed, box, (sd.h || 0.004), 600, null)
         : integrate(fn, seed, box, stepH, field === 'E' ? 260 : 190, solver);
-      if (line.length < (inside ? 5 : 8)) continue;
+      if (line.length < (inside ? 5 : 8)) { stat.rejShort++; continue; }
 
       // 再看整条线：如果大半程都贴着已有线，就丢掉（只靠种子点判不够）
       if (!inside) {
@@ -456,7 +461,7 @@ export class FieldViz {
           total++;
           if (nearOccupied(line[n], sep * 0.62)) close++;
         }
-        if (total > 0 && close / total > 0.3) continue;
+        if (total > 0 && close / total > 0.3) { stat.rejClose++; continue; }
       }
       const lineMags = [];
       for (const p of line) {
@@ -465,7 +470,17 @@ export class FieldViz {
         lineMags.push(m);
         if (m > 0 && isFinite(m)) mags.push(m);
       }
+      // 种子几乎重合 = 同一条线（不同站点/不同半径落在同一处），不要重复画
+      let dup = false;
+      for (let n2 = 0; n2 < accepted.length; n2++) {
+        const q2 = accepted[n2];
+        const dx = q2[0] - seed[0], dy = q2[1] - seed[1], dz = q2[2] - seed[2];
+        if (dx * dx + dy * dy + dz * dz < (sep * 0.45) * (sep * 0.45)) { dup = true; break; }
+      }
+      if (dup) { stat.rejDup = (stat.rejDup || 0) + 1; continue; }
+
       accepted.push(seed);
+      stat.acc++;
       for (let n = 0; n < line.length; n += 2) addPoint(line[n]);
       if (line.length > 1) addPoint(line[line.length - 1]);
 
@@ -537,8 +552,9 @@ export class FieldViz {
     }
 
     const sortedM = [...mags].sort((a, b) => a - b);
+    stat.nLines = nLines; stat.sep = sep; stat.stepH = stepH;
     this.lastStats = {
-      lines: allPts.length, marks: marks.length, norm, mags,
+      lines: allPts.length, marks: marks.length, norm, mags, stat,
       lo: percentile(sortedM, 0.06), hi: percentile(sortedM, 0.995),
     };
   }
@@ -591,20 +607,29 @@ export class FieldViz {
       }
       return false;
     };
+    // 只保留「落在盒子里的那一段」导体的弧长：否则站点会布到盒子外面，
+    // 种子又被盒子边界整批拒掉（小盒子里 78% 就这样没了）
     const cand = [];
     const cum = [];
+    const tIn = [];              // 每段在盒子内的参数区间
     let total = 0;
     for (let k = 0; k < solver.n; k++) {
-      if (field === 'E' || field === 'phi' || Math.abs(solver.cur[k]) > 1e-9) {
-        if (!nearBox(k)) continue;
-        cand.push(k);
-        total += solver.len[k];
-        cum.push(total);
-      }
+      if (!(field === 'E' || field === 'phi' || Math.abs(solver.cur[k]) > 1e-9)) continue;
+      if (!nearBox(k)) continue;
+      const i3 = 3 * k;
+      const a = [solver.p0[i3] * M2W, solver.p0[i3 + 1] * M2W, solver.p0[i3 + 2] * M2W];
+      const b = [solver.p1[i3] * M2W, solver.p1[i3 + 1] * M2W, solver.p1[i3 + 2] * M2W];
+      const seg = clipSegToBox(a, b, box);
+      if (!seg) continue;
+      cand.push(k);
+      tIn.push(seg);
+      total += solver.len[k] * (seg[1] - seg[0]);
+      cum.push(total);
     }
     if (!cand.length) {
       for (let k = 0; k < solver.n; k++) {
         cand.push(k);
+        tIn.push([0, 1]);
         total += solver.len[k];
         cum.push(total);
       }
@@ -628,16 +653,21 @@ export class FieldViz {
     const ds = total / nStations;
 
     const seeds = [];
+    const seedStat = { stations: 0, outBox: 0, nearCond: 0 };
     // 按低差异顺序访问站点（而不是从 0 顺着来）：
     // 上层只会接受前 nLines 条，顺序访问会让线全挤在电路最前面那几段导线上
     for (let idx = 0; idx < nStations; idx++) {
       const a = Math.floor(fract(idx * PHI) * nStations);
+      seedStat.stations++;
       const sArc = (a + 0.5) * ds;
       let ci = 0;
       while (ci < cum.length - 1 && cum[ci] < sArc) ci++;
       const k = cand[ci];
       const segStart = ci === 0 ? 0 : cum[ci - 1];
-      const t = Math.max(0, Math.min(1, (sArc - segStart) / Math.max(solver.len[k], 1e-12)));
+      const [ta, tb] = tIn[ci];
+      const frac = Math.max(0, Math.min(1,
+        (sArc - segStart) / Math.max(solver.len[k] * (tb - ta), 1e-12)));
+      const t = ta + (tb - ta) * frac;
 
       const i3 = 3 * k;
       const x0 = solver.p0[i3], y0 = solver.p0[i3 + 1], z0 = solver.p0[i3 + 2];
@@ -649,8 +679,19 @@ export class FieldViz {
       const e2 = cross(dir, e1);
 
       const radW = (solver.rad ? solver.rad[k] : solver.conductorRadius) * M2W;
-      const hi = Math.max(radW * 1.6, Math.min(rMax, radW * 12));
-      const lo = Math.min(hi * 0.92, Math.max(radW * 1.5, sep * 0.55));
+
+      // 站点到最近盒面的距离：半径必须小于它，否则这一圈的种子会掉到盒子外面。
+      // 之前是「先生成再丢弃」，小盒子里 78% 的种子就这样被扔掉了，
+      // 表现就是「流线又只剩几根」。
+      const dEdge = Math.min(
+        base[0] * M2W - box.min[0], box.max[0] - base[0] * M2W,
+        base[1] * M2W - box.min[1], box.max[1] - base[1] * M2W,
+        base[2] * M2W - box.min[2], box.max[2] - base[2] * M2W
+      );
+      if (dEdge <= radW) continue;          // 站点本身贴在盒面上，这一站跳过
+
+      const hi = Math.max(radW * 1.4, Math.min(Math.min(rMax, radW * 12), dEdge * 0.8));
+      const lo = Math.min(hi * 0.92, Math.max(radW * 1.35, sep * 0.55));
 
       // 站点之间交错一下起始方位，线不至于全从一个方向「长出来」
       const th = a * GOLDEN_ANGLE;
@@ -664,13 +705,14 @@ export class FieldViz {
           by + e1[1] * ca + e2[1] * sa,
           bz + e1[2] * ca + e2[2] * sa,
         ];
-        if (p[0] < box.min[0] || p[0] > box.max[0]) continue;
-        if (p[1] < box.min[1] || p[1] > box.max[1]) continue;
-        if (p[2] < box.min[2] || p[2] > box.max[2]) continue;
-        if (nearestConductorRatio(solver, p[0] * W2M, p[1] * W2M, p[2] * W2M) < 1.2) continue;
+        if (p[0] < box.min[0] || p[0] > box.max[0] ||
+            p[1] < box.min[1] || p[1] > box.max[1] ||
+            p[2] < box.min[2] || p[2] > box.max[2]) { seedStat.outBox++; continue; }
+        if (nearestConductorRatio(solver, p[0] * W2M, p[1] * W2M, p[2] * W2M) < 1.2) { seedStat.nearCond++; continue; }
         seeds.push(p);
       }
     }
+    this._seedStat = seedStat;
     return seeds;
   }
 
@@ -884,6 +926,27 @@ function makeStreamArrowGeometry() {
   const g = new THREE.ConeGeometry(0.019, 0.072, 5, 1, true);
   g.translate(0, 0.036, 0);
   return g;
+}
+
+/** 把线段裁剪到 AABB 内，返回 [t0, t1]（0..1）或 null */
+function clipSegToBox(a, b, box) {
+  let t0 = 0, t1 = 1;
+  const d = [b[0] - a[0], b[1] - a[1], b[2] - a[2]];
+  const lo = [box.min[0], box.min[1], box.min[2]];
+  const hi = [box.max[0], box.max[1], box.max[2]];
+  for (let i = 0; i < 3; i++) {
+    if (Math.abs(d[i]) < 1e-12) {
+      if (a[i] < lo[i] || a[i] > hi[i]) return null;
+      continue;
+    }
+    let ta = (lo[i] - a[i]) / d[i];
+    let tb = (hi[i] - a[i]) / d[i];
+    if (ta > tb) { const tmp = ta; ta = tb; tb = tmp; }
+    t0 = Math.max(t0, ta);
+    t1 = Math.min(t1, tb);
+    if (t0 > t1) return null;
+  }
+  return t1 > t0 ? [t0, t1] : null;
 }
 
 function nearestConductor(solver, x, y, z) {
