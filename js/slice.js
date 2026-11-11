@@ -106,6 +106,7 @@ export class SliceTool {
     scene3d.scene.add(this.group);
     this._buildMesh();
     this._bindDom();
+    this._bind3d();
   }
 
   /* ---------------- 三维切片 ---------------- */
@@ -204,7 +205,7 @@ export class SliceTool {
         const sy = (E[2] * B[0] - E[0] * B[2]) / MU0;
         const sz = (E[0] * B[1] - E[1] * B[0]) / MU0;
         val = Math.hypot(sx, sy, sz);
-        if (arrows && j % 10 === 5 && i % 10 === 5) arrows.push({ i, j, d: [sx, sy, sz] });
+        if (arrows && j % 16 === 7 && i % 16 === 7) arrows.push({ i, j, d: [sx, sy, sz], m: val });
       }
       vals[j * N + i] = isFinite(val) ? val : 0;
     }
@@ -216,9 +217,10 @@ export class SliceTool {
       const s = Array.from(vals).sort((a, b) => a - b);
       const lo = percentile(s, 0.01), hi = percentile(s, 0.99);
       const mid = 0.5 * (lo + hi), half = Math.max(0.5 * (hi - lo), 1e-12);
+      const t = (v) => Math.min(1, Math.max(0, 0.5 + 0.5 * (v - mid) / half));
       return {
-        kind, lo, hi, mid,
-        color: (v) => ramp(DIV, 0.5 + 0.5 * (v - mid) / half),
+        kind, lo, hi, mid, t,
+        color: (v) => ramp(DIV, t(v)),
         level: (f) => mid - half + 2 * half * f,
       };
     }
@@ -226,9 +228,10 @@ export class SliceTool {
     const lo = Math.max(percentile(s, 0.02) || 1e-12, 1e-30);
     const hi = Math.max(percentile(s, 0.98) || lo * 10, lo * 10);
     const l0 = Math.log10(lo), l1 = Math.log10(hi);
+    const t = (v) => (v <= 0 ? 0 : Math.min(1, Math.max(0, (Math.log10(Math.max(v, 1e-30)) - l0) / (l1 - l0))));
     return {
-      kind, lo, hi,
-      color: (v) => ramp(TURBO, v <= 0 ? 0 : Math.min(1, Math.max(0, (Math.log10(Math.max(v, 1e-30)) - l0) / (l1 - l0)))),
+      kind, lo, hi, t,
+      color: (v) => ramp(TURBO, t(v)),
       level: (f) => Math.pow(10, l0 + (l1 - l0) * f),
     };
   }
@@ -360,29 +363,59 @@ export class SliceTool {
     }
     ctx.stroke();
 
-    // 能流方向
+    // 能流方向：画成立体箭头（法向分量斜投影，这样能看出“进出纸面”的方向）
     if (arrows && arrows.length) {
       const plane = this.plane;
-      ctx.strokeStyle = 'rgba(255,255,255,0.82)';
-      ctx.fillStyle = 'rgba(255,255,255,0.92)';
-      ctx.lineWidth = Math.max(1, N / 700);
-      const L = N * 0.017;
+      const L = N * 0.021;
+      // 平面法向在画面里的斜投影方向（右上）
+      const NX = 0.55, NY = -0.45;
       for (const a of arrows) {
         const m = Math.hypot(a.d[0], a.d[1], a.d[2]);
         if (!(m > 0)) continue;
         const du = dot(a.d, plane.e1) / m;
         const dv = dot(a.d, plane.e2) / m;
-        const len = Math.hypot(du, dv);
-        if (len < 0.12) continue;
-        const x = a.i + 0.5, y = N - 1 - (a.j + 0.5);
-        const ux = (du / len) * L, uy = (dv / len) * L;
-        ctx.beginPath();
-        ctx.moveTo(x - ux, y - uy);
-        ctx.lineTo(x + ux, y + uy);
-        ctx.stroke();
-        ctx.beginPath();
-        ctx.arc(x + ux, y + uy, Math.max(1, N / 380), 0, Math.PI * 2);
-        ctx.fill();
+        const dn = dot(a.d, plane.n) / m;
+
+        // 屏幕方向：面内分量 + 法向的斜投影（画布 y 向下，所以 e2 取负）
+        const sx = du + dn * NX;
+        const sy = -dv + dn * NY;
+        const len = Math.hypot(sx, sy);
+        if (len < 0.08) continue;
+
+        const t = this.norm ? this.norm.t(a.m) : 0.5;
+        const scale = L * (0.55 + 0.85 * t);              // 长度也编码强度
+        const x = a.i + 0.5, y = N - 1 - (a.j - 0.5);
+        const ux = (sx / len) * scale;
+        const uy = (sy / len) * scale;
+
+        // 朝观察者的更亮，背离的更暗（给立体感）
+        const shade = 0.5 + 0.5 * dn;
+        const alpha = 0.5 + 0.45 * shade;
+        const w = Math.max(1, N / 600);
+        const hx = x + ux * 0.78, hy = y + uy * 0.78;
+        const tx = x - ux * 0.6, ty = y - uy * 0.6;
+        const ang = Math.atan2(hy - ty, hx - tx);
+        const hl = Math.max(2.4, N / 170);
+
+        const drawArrow = (color, width, grow) => {
+          ctx.strokeStyle = color;
+          ctx.fillStyle = color;
+          ctx.lineWidth = width;
+          ctx.beginPath();
+          ctx.moveTo(tx, ty);
+          ctx.lineTo(hx, hy);
+          ctx.stroke();
+          ctx.beginPath();
+          ctx.moveTo(hx, hy);
+          ctx.lineTo(hx - Math.cos(ang - 0.42) * (hl + grow), hy - Math.sin(ang - 0.42) * (hl + grow));
+          ctx.lineTo(hx - Math.cos(ang + 0.42) * (hl + grow), hy - Math.sin(ang + 0.42) * (hl + grow));
+          ctx.closePath();
+          ctx.fill();
+        };
+
+        // 先画一层深色描边，再叠白色本体：亮背景（黄/绿）和暗背景上都清楚
+        drawArrow('rgba(8,12,18,0.55)', w + 1.6, 1.2);
+        drawArrow(`rgba(255,255,255,${alpha.toFixed(2)})`, w, 0);
       }
     }
 
@@ -538,6 +571,93 @@ export class SliceTool {
       d.win.style.right = 'auto';
     });
     d.head.addEventListener('pointerup', () => { drag = null; });
+  }
+
+  /** 在主视图里直接操作这块截面：拖动=沿法向平移，Shift+拖动=旋转，滚轮=缩放 */
+  _bind3d() {
+    const dom = this.scene3d.renderer.domElement;
+    const ray = new THREE.Raycaster();
+    const ndc = new THREE.Vector2();
+    const camDir = new THREE.Vector3();
+    const hitPlane = new THREE.Plane();
+    const hitPoint = new THREE.Vector3();
+
+    const pick = (ev) => {
+      const r = dom.getBoundingClientRect();
+      ndc.set(((ev.clientX - r.left) / r.width) * 2 - 1, -((ev.clientY - r.top) / r.height) * 2 + 1);
+      ray.setFromCamera(ndc, this.scene3d.camera);
+      const hits = ray.intersectObject(this.mesh, false);
+      return hits.length ? hits[0] : null;
+    };
+
+    document.addEventListener('pointerdown', (ev) => {
+      if (!this.state.visible || !dom.contains(ev.target)) return;
+      const hit = pick(ev);
+      if (!hit) return;
+      ev.stopPropagation();
+      ev.preventDefault();
+      this.scene3d.controls.enabled = false;
+      this._drag = {
+        x: ev.clientX, y: ev.clientY,
+        cx: this.state.cx, cy: this.state.cy, cz: this.state.cz,
+        yaw: this.state.yaw, pitch: this.state.pitch,
+        n: this.plane.n, point: hit.point.clone(),
+        rotate: ev.shiftKey,
+      };
+      dom.style.cursor = 'grabbing';
+    }, true);
+
+    document.addEventListener('pointermove', (ev) => {
+      if (!this._drag) {
+        if (this.state.visible && dom.contains(ev.target)) {
+          dom.style.cursor = pick(ev) ? 'move' : '';
+        }
+        return;
+      }
+      ev.stopPropagation();
+      const d = this._drag;
+      const dx = ev.clientX - d.x, dy = ev.clientY - d.y;
+      if (d.rotate) {
+        this.state.yaw = d.yaw + dx * 0.6;
+        this.state.pitch = Math.max(-89, Math.min(89, d.pitch - dy * 0.6));
+      } else {
+        const r = dom.getBoundingClientRect();
+        ndc.set(((ev.clientX - r.left) / r.width) * 2 - 1, -((ev.clientY - r.top) / r.height) * 2 + 1);
+        ray.setFromCamera(ndc, this.scene3d.camera);
+        this.scene3d.camera.getWorldDirection(camDir);
+        hitPlane.setFromNormalAndCoplanarPoint(camDir, d.point);
+        if (ray.ray.intersectPlane(hitPlane, hitPoint)) {
+          const move =
+            (hitPoint.x - d.point.x) * d.n[0] +
+            (hitPoint.y - d.point.y) * d.n[1] +
+            (hitPoint.z - d.point.z) * d.n[2];
+          this.state.cx = d.cx + d.n[0] * move;
+          this.state.cy = d.cy + d.n[1] * move;
+          this.state.cz = d.cz + d.n[2] * move;
+        }
+      }
+      this.update();
+      if (this.onChange) this.onChange();
+    }, true);
+
+    const end = () => {
+      if (!this._drag) return;
+      this._drag = null;
+      this.scene3d.controls.enabled = true;
+      dom.style.cursor = '';
+    };
+    document.addEventListener('pointerup', end, true);
+    document.addEventListener('pointercancel', end, true);
+
+    dom.addEventListener('wheel', (ev) => {
+      if (!this.state.visible || !dom.contains(ev.target)) return;
+      if (!pick(ev)) return;
+      ev.preventDefault();
+      ev.stopPropagation();
+      this.state.size = Math.max(0.15, Math.min(9, this.state.size * Math.exp(-ev.deltaY * 0.0012)));
+      this.update();
+      if (this.onChange) this.onChange();
+    }, { capture: true, passive: false });
   }
 
   probe(e) {

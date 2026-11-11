@@ -63,7 +63,7 @@ export function tubeGeometry(points, radius, radialSegments = 8) {
       const b = i * radialSegments + ((s + 1) % radialSegments);
       const c = (i + 1) * radialSegments + s;
       const d = (i + 1) * radialSegments + ((s + 1) % radialSegments);
-      idx.push(a, c, b, b, c, d);
+      idx.push(a, b, c, b, d, c);   // 逆时针（从外侧看）→ 法向朝外
     }
   }
   const g = new THREE.BufferGeometry();

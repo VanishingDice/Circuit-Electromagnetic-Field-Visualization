@@ -106,6 +106,7 @@ function rebuild() {
       bounds: sceneData.bounds,
       parts: sceneData.parts,
       colorByPotential: state.colorByPot,
+      conductorR: state.wireRadius * METER_PER_UNIT,
     });
     updatePane();
     boxGizmo.setBox(slicePane.worldBox);
@@ -306,6 +307,21 @@ const syncSpInputs = () => {
   }
 };
 
+const syncSliceInputs = () => {
+  const s = slice.state;
+  const set = (id, v) => { const el = $(id); if (el && document.activeElement !== el) el.value = String(Math.round(v)); };
+  set('sw-cx', s.cx * 20);
+  set('sw-cy', s.cy * 20);
+  set('sw-cz', s.cz * 20);
+  set('sw-yaw', ((s.yaw % 360) + 360) % 360);
+  set('sw-pitch', s.pitch);
+  set('sw-size', s.size * 10);
+  const lab = [['sw-cx-label', s.cx.toFixed(2)], ['sw-cy-label', s.cy.toFixed(2)],
+               ['sw-cz-label', s.cz.toFixed(2)], ['sw-size-label', s.size.toFixed(2) + ' 格']];
+  for (const [id, txt] of lab) { const el = $(id); if (el) el.textContent = txt; }
+};
+slice.onChange = syncSliceInputs;
+
 const spBind = (id, key, scale) => {
   const el = $(id);
   if (!el) return;
@@ -321,6 +337,11 @@ spBind('sp-sx', 'sx', 10);
 spBind('sp-sy', 'sy', 10);
 spBind('sp-sz', 'sz', 10);
 $('sp-fit')?.addEventListener('click', () => slicePane.frame());
+$('sp-snap')?.addEventListener('click', () => {
+  slicePane.snapToWire();
+  boxGizmo.setBox(slicePane.worldBox);
+  syncSpInputs();
+});
 $('sp-showbox')?.addEventListener('change', (e) => boxGizmo.setVisible(e.target.checked));
 
 $('sp-density')?.addEventListener('input', (e) => {
@@ -607,6 +628,16 @@ function runSelfTest() {
       ok(true, '拖动截取框 setWorldBox');
     } catch (err) {
       ok(false, '拖动截取框抛错', String(err.message).slice(0, 80));
+    }
+
+    // 9.57 吸附导线
+    try {
+      slicePane.snapToWire();
+      boxGizmo.setBox(slicePane.worldBox);
+      syncSpInputs();
+      ok(true, '吸附导线');
+    } catch (err) {
+      ok(false, '吸附导线抛错', String(err.message).slice(0, 80));
     }
 
     // 9.6 截取空间面板（同源渲染 + 裁剪）
