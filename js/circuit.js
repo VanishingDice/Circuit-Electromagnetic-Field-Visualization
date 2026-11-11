@@ -205,9 +205,10 @@ export function solveCircuit(circuit) {
 const SEG_FACTOR = 12;
 const SEG_LEN_MIN = 0.3;
 const WIRE_R = 0.05;       // 默认导线半径（世界单位；1 单位 = 1 cm）
-const PLATE_HALF = 0.42;   // 电容极板半宽
-const PLATE_GAP = 0.34;    // 极板间距
+const PLATE_HALF = 0.4;    // 极板半宽
+const PLATE_GAP = 0.42;    // 极板间距
 const PLATE_STRIPS = 7;    // 极板用几条平行线电荷近似
+const BATTERY_GAP = 0.42;  // 电池两个电极的间距
 
 function subdivide(p0, p1, maxLen) {
   const d = Math.hypot(p1[0] - p0[0], p1[1] - p0[1], p1[2] - p0[2]);
@@ -307,14 +308,22 @@ export function buildScene(circuit, solution, opts = {}) {
         break;
       }
       case 'battery': {
+        // 和电容一样是两块相对的薄板（电池的两个电极），中间用细本体连起来
         addPath([A, B], Va, Vb);
-        const bodyA = V3.add(A, V3.mul(axis, L * 0.18));
-        const bodyB = V3.add(A, V3.mul(axis, L * 0.82));
-        parts.push({ kind: 'tube', pts: [A, bodyA], radius: wireRadius, mat: 'copper' });
-        parts.push({ kind: 'tube', pts: [bodyB, B], radius: wireRadius, mat: 'copper' });
-        parts.push({ kind: 'box', center: V3.mul(V3.add(bodyA, bodyB), 0.5), axis, up, side, size: [V3.len(V3.sub(bodyB, bodyA)), 0.26, 0.52], mat: 'battery' });
-        parts.push({ kind: 'box', center: V3.add(bodyB, V3.mul(axis, 0.05)), axis, up, side, size: [0.06, 0.4, 0.4], mat: 'batteryPlus' });
-        parts.push({ kind: 'label', pos: V3.add(V3.mul(V3.add(bodyA, bodyB), 0.5), V3.mul(up, 0.42)), text: `${fmt(el.value)}V` });
+        const mid = V3.mul(V3.add(A, B), 0.5);
+        const half = BATTERY_GAP / 2;
+        const negC = V3.add(mid, V3.mul(axis, -half));
+        const posC = V3.add(mid, V3.mul(axis, half));
+        parts.push({ kind: 'tube', pts: [A, negC], radius: wireRadius, mat: 'copper' });
+        parts.push({ kind: 'tube', pts: [posC, B], radius: wireRadius, mat: 'copper' });
+        // 内部本体（半透明，只作为「这两块板是同一个元件」的提示）
+        parts.push({
+          kind: 'tube', pts: [negC, posC], radius: wireRadius * 1.5, mat: 'batteryBody',
+        });
+        // 负电极（暗）与正电极（红）
+        parts.push({ kind: 'plate', center: negC, axis, up, side, half: PLATE_HALF * 0.95, mat: 'batteryMinus' });
+        parts.push({ kind: 'plate', center: posC, axis, up, side, half: PLATE_HALF * 0.95, mat: 'batteryPlus' });
+        parts.push({ kind: 'label', pos: V3.add(mid, V3.mul(up, PLATE_HALF + 0.28)), text: `${fmt(el.value)}V` });
         break;
       }
       case 'capacitor': {
@@ -335,7 +344,10 @@ export function buildScene(circuit, solution, opts = {}) {
             const q1 = V3.add(c0, V3.mul(side, PLATE_HALF));
             addPath([q0, q1], pot, pot, { current: 0 });
           }
-          parts.push({ kind: 'plate', center: pc, axis, up, side, half: PLATE_HALF, mat: 'plate' });
+          parts.push({
+            kind: 'plate', center: pc, axis, up, side, half: PLATE_HALF,
+            mat: pot === Va ? 'plate' : 'plate2',
+          });
         }
         parts.push({ kind: 'label', pos: V3.add(mid, V3.mul(up, 0.62)), text: `${fmt(el.value)}µF` });
         break;

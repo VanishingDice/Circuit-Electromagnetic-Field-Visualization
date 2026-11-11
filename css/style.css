@@ -148,7 +148,9 @@ button { font-family: inherit; cursor: pointer; }
 }
 #slicePane .pane-head { padding: 8px 14px 6px; align-items: center; }
 .pane-sub { font-size: 10.5px; color: #4f6274; margin-left: 6px; }
-.sp-actions { margin-left: auto; }
+.sp-actions { margin-left: auto; display: flex; align-items: center; gap: 10px; }
+.switch.tiny { font-size: 10px; gap: 4px; color: #6f8298; }
+.switch.tiny input { width: 11px; height: 11px; }
 .ghost.tiny { padding: 3px 8px; font-size: 10.5px; }
 #sp-container { flex: 1 1 auto; min-height: 0; position: relative; background: #070a0f; }
 #sp-container canvas { display: block; }

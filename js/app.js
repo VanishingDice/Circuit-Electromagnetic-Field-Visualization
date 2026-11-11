@@ -9,6 +9,7 @@ import { FieldViz, turbo, diverging } from './viz.js';
 import { AnalysisCard } from './analysis.js';
 import { SliceTool } from './slice.js';
 import { SlicePane } from './slicepane.js';
+import { BoxGizmo } from './boxgizmo.js';
 import { VERSION, BUILD } from './version.js';
 
 const MODE_LABEL = { arrows: '箭头', stream: '流线', slice: '切片' };
@@ -58,7 +59,15 @@ const editor = new Editor2D(editorCanvas, {
 editor.setCircuit(circuit);
 const analysis = new AnalysisCard($('analysis'));
 const slicePane = new SlicePane($('sp-container'));
-slicePane.attachMain(scene3d);
+slicePane.attachOutline();
+
+// 主视图里可以拖动/缩放截取框
+const boxGizmo = new BoxGizmo(scene3d, {
+  onChange: (b) => {
+    slicePane.setWorldBox(b.min, b.max);
+    syncSpInputs();
+  },
+});
 const slice = new SliceTool(scene3d, {
   win: $('slicewin'), head: $('sw-head'), canvas: $('sw-canvas'),
   title: $('sw-title'), res: $('sw-res'),
@@ -98,6 +107,8 @@ function rebuild() {
       colorByPotential: state.colorByPot,
     });
     updatePane();
+    boxGizmo.setBox(slicePane.worldBox);
+    syncSpInputs();
     if (state.sliceOn) {
       slice.setScene({
         solver: sceneData.solver,
@@ -281,11 +292,22 @@ $('color-pot').addEventListener('change', (e) => {
   if (sceneData) scene3d.setCircuit(sceneData.parts, sceneData.bounds, { colorByPotential: state.colorByPot, frame: false });
 });
 // 截取空间的体块滑杆
+const syncSpInputs = () => {
+  const b = slicePane.box;
+  const map = [['sp-cx', b.cx, 20], ['sp-cy', b.cy, 20], ['sp-cz', b.cz, 20],
+               ['sp-sx', b.sx, 10], ['sp-sy', b.sy, 10], ['sp-sz', b.sz, 10]];
+  for (const [id, v, sc] of map) {
+    const el = $(id);
+    if (el && document.activeElement !== el) el.value = String(Math.round(v * sc));
+  }
+};
+
 const spBind = (id, key, scale) => {
   const el = $(id);
   if (!el) return;
   el.addEventListener('input', (e) => {
     slicePane.setBox({ [key]: +e.target.value / scale });
+    boxGizmo.setBox(slicePane.worldBox);
   });
 };
 spBind('sp-cx', 'cx', 20);
@@ -295,6 +317,7 @@ spBind('sp-sx', 'sx', 10);
 spBind('sp-sy', 'sy', 10);
 spBind('sp-sz', 'sz', 10);
 $('sp-fit')?.addEventListener('click', () => slicePane.frame());
+$('sp-showbox')?.addEventListener('change', (e) => boxGizmo.setVisible(e.target.checked));
 
 $('btn-slice').addEventListener('click', () => {
   state.sliceOn = !state.sliceOn;
@@ -558,6 +581,20 @@ function runSelfTest() {
       }
     }
     state.sliceOn = false; slice.show(false);
+
+    // 9.55 拖动截取框（走 setWorldBox + gizmo 回写这条路径）
+    try {
+      const b = slicePane.worldBox;
+      slicePane.setWorldBox(
+        [b.min[0] + 0.2, b.min[1] - 0.1, b.min[2]],
+        [b.max[0] + 0.6, b.max[1] + 0.1, b.max[2]]
+      );
+      boxGizmo.setBox(slicePane.worldBox);
+      syncSpInputs();
+      ok(true, '拖动截取框 setWorldBox');
+    } catch (err) {
+      ok(false, '拖动截取框抛错', String(err.message).slice(0, 80));
+    }
 
     // 9.6 截取空间面板（同源渲染 + 裁剪）
     try {

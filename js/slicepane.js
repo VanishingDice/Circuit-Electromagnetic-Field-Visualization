@@ -30,21 +30,14 @@ export class SlicePane {
     this.outlines = [];
   }
 
-  /** 在主视图里也画一个体块线框，方便看清截的是哪一块 */
-  attachMain(scene3d) {
-    this.mainScene = scene3d;
-    const make = (opacity) => {
-      const g = new THREE.EdgesGeometry(new THREE.BoxGeometry(1, 1, 1));
-      const m = new THREE.LineBasicMaterial({ color: 0x7ee0ff, transparent: true, opacity });
-      return new THREE.LineSegments(g, m);
-    };
-    this.outlineMain = make(0.4);
-    this.outlinePane = make(0.35);
-    this.outlineMain.userData.noClip = true;
+  /** 面板自己的线框（主视图那边由 BoxGizmo 负责，可以单独隐藏） */
+  attachOutline() {
+    const g = new THREE.EdgesGeometry(new THREE.BoxGeometry(1, 1, 1));
+    const m = new THREE.LineBasicMaterial({ color: 0x7ee0ff, transparent: true, opacity: 0.35 });
+    this.outlinePane = new THREE.LineSegments(g, m);
     this.outlinePane.userData.noClip = true;
-    scene3d.scene.add(this.outlineMain);
     this.scene.scene.add(this.outlinePane);
-    this.outlines = [this.outlineMain, this.outlinePane];
+    this.outlines = [this.outlinePane];
     this.syncOutline();
   }
 
@@ -55,6 +48,19 @@ export class SlicePane {
       o.position.set(b.center[0], b.center[1], b.center[2]);
       o.scale.set(w, h, d);
     }
+  }
+
+  /** 由世界坐标 min/max 反推体块参数（给主视图的拖拽框用） */
+  setWorldBox(min, max) {
+    const base = this.base;
+    const c = [(min[0] + max[0]) / 2, (min[1] + max[1]) / 2, (min[2] + max[2]) / 2];
+    this.box.cx = c[0] - base[0];
+    this.box.cy = c[1] - base[1];
+    this.box.cz = c[2] - base[2];
+    this.box.sx = Math.max(0.12, (max[0] - min[0]) / 2);
+    this.box.sy = Math.max(0.12, (max[1] - min[1]) / 2);
+    this.box.sz = Math.max(0.12, (max[2] - min[2]) / 2);
+    this.applyBoxChange();
   }
 
   /* ---------------- 体块 <-> 世界 ---------------- */
@@ -106,6 +112,10 @@ export class SlicePane {
   /** 只改体块：重设裁剪面 + 重算可视化 */
   setBox(patch) {
     Object.assign(this.box, patch);
+    this.applyBoxChange();
+  }
+
+  applyBoxChange() {
     const box = this.worldBox;
     this.scene.setClipPlanes(SlicePane.planesFor(box));
     this.scene.applyClipTo(this.scene.circuitGroup);
@@ -152,7 +162,7 @@ export class SlicePane {
       field,
       mode,
       // 同样多的箭头/流线落在更小的体积里，天然更密
-      density: Math.min(0.8, density * 1.05 + 0.22),
+      density: Math.max(0, Math.min(1, density)),
       opacity: opacity ?? 0.95,
       sliceAxis,
       slicePos,

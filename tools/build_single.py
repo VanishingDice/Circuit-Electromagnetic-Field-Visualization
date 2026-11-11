@@ -25,6 +25,7 @@ MODULES = [
     'js/analysis.js',
     'js/slice.js',
     'js/slicepane.js',
+    'js/boxgizmo.js',
     'js/app.js',
 ]
 

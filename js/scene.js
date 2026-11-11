@@ -9,8 +9,11 @@ export const MAT_COLORS = {
   copper: 0xc98b4b,
   body: 0xd8cfc0,
   battery: 0x39435a,
+  batteryBody: 0x2a3346,
   batteryPlus: 0xe06c5a,
+  batteryMinus: 0x4a6ea8,
   plate: 0x9fb0c0,
+  plate2: 0x708496,
   coil: 0xb08bd6,
 };
 

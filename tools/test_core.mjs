@@ -137,6 +137,99 @@ console.log('== 导体内部的场（剖面功能的基础）==');
   ok(radial < 0, '电阻导体内部的能流指向轴心');
 }
 
+console.log('== 坡印廷定理：包围电阻的闭合曲面 ∫S·n̂ dA ≈ −I²R ==');
+{
+  // 单回路：电池 + 100Ω
+  let id = 0;
+  const el = (type, a, b, value) => ({ id: 'x' + (++id), type, a, b, value });
+  const cc = {
+    elements: [
+      el('battery', [0, 0], [0, 2], 9),
+      el('wire', [0, 2], [2, 2]),
+      el('resistor', [2, 2], [4, 2], 100),
+      el('wire', [4, 2], [4, 0]),
+      el('wire', [4, 0], [0, 0]),
+    ],
+  };
+  const sol2 = solveCircuit(cc);
+  const sc2 = buildScene(cc, sol2, { wireRadius: 0.05 });
+  const s3 = sc2.solver;
+  const I2 = Math.abs(sol2.elCurrent[cc.elements[2].id]);
+  const P2 = I2 * I2 * 100;
+
+  const A2 = worldOf([2, 2]), B2 = worldOf([4, 2]);
+  const x0 = Math.min(A2[0], B2[0]) * 0.01, x1 = Math.max(A2[0], B2[0]) * 0.01;
+  const zc = A2[2] * 0.01;
+  const E3 = [0, 0, 0], B3 = [0, 0, 0];
+  const Sat = (x, y, z) => {
+    s3.eField(x, y, z, E3);
+    s3.bField(x, y, z, B3);
+    return [
+      (E3[1] * B3[2] - E3[2] * B3[1]) / MU0,
+      (E3[2] * B3[0] - E3[0] * B3[2]) / MU0,
+      (E3[0] * B3[1] - E3[1] * B3[0]) / MU0,
+    ];
+  };
+  const N = 10, r = 0.003, ext = 0.002;
+  const xa = x0 - ext, xb = x1 + ext;
+  let flux = 0;
+  for (let i = 0; i < N; i++) {
+    for (let k = 0; k < N; k++) {
+      const x = xa + (xb - xa) * (i + 0.5) / N;
+      const dz = 2 * r * (k + 0.5) / N;
+      const dA = ((xb - xa) / N) * (2 * r / N);
+      flux += Sat(x, r, zc - r + dz)[1] * dA - Sat(x, -r, zc - r + dz)[1] * dA;
+      const y = -r + dz;
+      flux += Sat(x, y, zc + r)[2] * dA - Sat(x, y, zc - r)[2] * dA;
+    }
+  }
+  for (let j = 0; j < N; j++) {
+    for (let k = 0; k < N; k++) {
+      const y = -r + 2 * r * (j + 0.5) / N;
+      const z = zc - r + 2 * r * (k + 0.5) / N;
+      const dA = (2 * r / N) * (2 * r / N);
+      flux += Sat(xb, y, z)[0] * dA - Sat(xa, y, z)[0] * dA;
+    }
+  }
+  console.log(`  ∫S·n̂ dA = ${flux.toFixed(3)} W，−I²R = ${(-P2).toFixed(3)} W`);
+  ok(flux < 0, '净能流指向电阻内部（外法向为负）');
+  ok(Math.abs(flux + P2) / P2 < 0.45, '闭合曲面通量 ≈ I²R（误差 <45%）',
+    `${(Math.abs(flux + P2) / P2 * 100).toFixed(0)}%`);
+}
+
+console.log('== 真断路：没有电流就没有能流 ==');
+{
+  let id = 0;
+  const el = (type, a, b, value) => ({ id: 'y' + (++id), type, a, b, value });
+  const open = {
+    elements: [
+      el('battery', [0, 0], [0, 2], 9),
+      el('wire', [0, 2], [3, 2]),
+      el('wire', [0, 0], [3, 0]),
+    ],
+  };
+  const so = solveCircuit(open);
+  const sco = buildScene(open, so, { wireRadius: 0.05 });
+  const so3 = sco.solver;
+  let maxI = 0, maxS = 0;
+  for (const v of Object.values(so.elCurrent)) maxI = Math.max(maxI, Math.abs(v));
+  const E4 = [0, 0, 0], B4 = [0, 0, 0];
+  for (let i = 0; i < 300; i++) {
+    const p = [(-1 + Math.random() * 5) * 0.01, (Math.random() - 0.5) * 0.04, (-1 + Math.random() * 5) * 0.01];
+    so3.eField(p[0], p[1], p[2], E4);
+    so3.bField(p[0], p[1], p[2], B4);
+    const S = [
+      (E4[1] * B4[2] - E4[2] * B4[1]) / MU0,
+      (E4[2] * B4[0] - E4[0] * B4[2]) / MU0,
+      (E4[0] * B4[1] - E4[1] * B4[0]) / MU0,
+    ];
+    maxS = Math.max(maxS, Math.hypot(...S));
+  }
+  console.log(`  断路时最大电流 ${maxI.toExponential(1)} A，最大 |S| ${maxS.toExponential(1)} W/m²`);
+  ok(maxI < 1e-9, '真断路没有电流');
+  ok(maxS < 1e-9, '没有电流时 S = 0');
+}
+
 console.log(fails === 0 ? '\n全部通过 ✅' : `\n${fails} 项失败 ❌`);
 process.exit(fails === 0 ? 0 : 1);
 
