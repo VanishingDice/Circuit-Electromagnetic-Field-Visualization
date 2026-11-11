@@ -251,6 +251,8 @@ export function buildScene(circuit, solution, opts = {}) {
   // 画面上的导线半径（可调，只影响几何与「导体内部」的解析场）
   const wireRadius = opts.wireRadius ?? WIRE_R;
   // 边界元用的细线半径：细线近似要求 半径 ≪ 线段长，所以固定得比较细
+  // 边界元必须用细线：实测把物理半径提到 0.5mm 后，为了保持 a≪L 得把线段放到
+  // 6mm，闭合曲面通量误差从 13% 涨到 81%。所以这里固定用细线，画面上的粗细另算。
   const physicsRadius = Math.min(wireRadius, 0.02);
   const SEG_LEN = Math.max(SEG_LEN_MIN, SEG_FACTOR * physicsRadius);
   const parts = [];

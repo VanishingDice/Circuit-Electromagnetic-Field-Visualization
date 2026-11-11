@@ -256,7 +256,7 @@ export class FieldSolver {
     this._insideFlag = false;
     let ex = 0, ey = 0, ez = 0;
     const p0 = this.p0, p1 = this.p1, len = this.len, lam = this.lam, n = this.n;
-    const minDenBase = this.wireRadius * 4;
+    const rad = this.rad;
     for (let i = 0; i < n; i++) {
       const L = len[i];
       if (!L) continue;
@@ -269,8 +269,12 @@ export class FieldSolver {
       if (r2 < 1e-9) r2 = 1e-9;
       const s = r1 + r2;
       let den = s * s - L * L;
-      // 贴近线段时数值上会趋 0，用导线半径兜底（物理上本来就发散）
-      const minDen = minDenBase * L;
+      // 贴近线段时 den→0。截断半径必须等于该段自己的半径 a：
+      // s²−L² ≈ 4ρ²，取 4a² 就等于在 ρ=a（导体表面）处封顶。
+      // 原来用 4·a_phys·L 会让截断发生在 ρ=√(a·L)（0.2mm×3.5mm → 0.84mm），
+      // 比画出来的导线（0.5mm）还粗，表面外凭空多出一个台阶。
+      const a = rad ? rad[i] : this.wireRadius;
+      const minDen = 4 * a * a;
       if (den < minDen) den = minDen;
       const f = (2 * KE * lam[i] * L) / den;
       ex += f * (ax / r1 + bx / r2);
