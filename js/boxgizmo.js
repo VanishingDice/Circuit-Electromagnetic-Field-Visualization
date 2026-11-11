@@ -9,7 +9,7 @@
 import * as THREE from 'three';
 
 const MIN_HALF = 0.01;   // 半边长下限（格），允许压成很薄的一层
-const MAX_HALF = 6.0;
+const MAX_HALF = 20.0;
 
 export class BoxGizmo {
   constructor(scene3d, { onChange } = {}) {

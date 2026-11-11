@@ -351,52 +351,83 @@ export class FieldViz {
     this.lastStats = { lines: allPts.length, marks: marks.length, norm, mags };
   }
 
+  /**
+   * 确定性撒种（不再随机）：按导体长度分摊条数，
+   * 沿弧长用黄金比、绕轴用黄金角、半径用 Halton 序列 —— 分布均匀且每次重建完全一致。
+   */
   makeSeeds(solver, box, n, field) {
-    const seeds = [];
-    const rnd = (a, b) => a + Math.random() * (b - a);
-    const norm = (v) => { const l = Math.hypot(...v) || 1; return [v[0] / l, v[1] / l, v[2] / l]; };
+    const norm = (v) => { const l = Math.hypot(v[0], v[1], v[2]) || 1; return [v[0] / l, v[1] / l, v[2] / l]; };
     const cross = (a, b) => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
+    const fract = (x) => x - Math.floor(x);
+    const halton = (i, b) => { let f = 1, r = 0, k = i + 1; while (k > 0) { f /= b; r += f * (k % b); k = Math.floor(k / b); } return r; };
+    const PHI = 0.6180339887498949;
+    const GOLDEN_ANGLE = 2.399963229728653;
 
-    // 磁场只在载流导线附近有意义；电场则所有带电导体都算
+    // 磁场只在载流导体附近有意义；电场则所有带电导体都算
     const cand = [];
+    const cum = [];
+    let total = 0;
     for (let k = 0; k < solver.n; k++) {
-      if (field === 'E' || field === 'phi' || Math.abs(solver.cur[k]) > 1e-9) cand.push(k);
-    }
-    if (!cand.length) for (let k = 0; k < solver.n; k++) cand.push(k);
-    // 分层取半径，场线会形成一圈圈嵌套的家族，而不是一团乱麻
-    const radii = [0.22, 0.3, 0.42, 0.58, 0.8, 1.05];
-
-    let guard = 0;
-    while (seeds.length < n && guard++ < n * 30) {
-      let p;
-      if (Math.random() < 0.88 && cand.length) {
-        const k = cand[Math.floor(Math.random() * cand.length)];
-        const t = Math.random();
-        const x0 = solver.p0[3 * k], y0 = solver.p0[3 * k + 1], z0 = solver.p0[3 * k + 2];
-        const x1 = solver.p1[3 * k], y1 = solver.p1[3 * k + 1], z1 = solver.p1[3 * k + 2];
-        const base = [x0 + (x1 - x0) * t, y0 + (y1 - y0) * t, z0 + (z1 - z0) * t];
-        const dir = norm([x1 - x0, y1 - y0, z1 - z0]);
-        const ref = Math.abs(dir[1]) < 0.9 ? [0, 1, 0] : [1, 0, 0];
-        const e1 = norm(cross(dir, ref));
-        const e2 = cross(dir, e1);
-        // 电场线要从导体表面「长出来」，所以半径贴着导线；磁场线则分层铺开
-        const r = field === 'E'
-          ? (solver.conductorRadius * M2W) * rnd(1.25, 3.4)
-          : radii[Math.floor(Math.random() * radii.length)] * rnd(0.92, 1.08);
-        const th = rnd(0, Math.PI * 2);
-        const ca = Math.cos(th) * r, sa = Math.sin(th) * r;
-        p = [
-          (base[0] + e1[0] * ca + e2[0] * sa) * M2W,
-          (base[1] + e1[1] * ca + e2[1] * sa) * M2W,
-          (base[2] + e1[2] * ca + e2[2] * sa) * M2W,
-        ];
-      } else {
-        p = [rnd(box.min[0], box.max[0]), rnd(box.min[1], box.max[1]), rnd(box.min[2], box.max[2])];
+      if (field === 'E' || field === 'phi' || Math.abs(solver.cur[k]) > 1e-9) {
+        cand.push(k);
+        total += solver.len[k];
+        cum.push(total);
       }
+    }
+    if (!cand.length) {
+      for (let k = 0; k < solver.n; k++) {
+        cand.push(k);
+        total += solver.len[k];
+        cum.push(total);
+      }
+    }
+    if (!cand.length || total <= 0) return [];
+
+    // 磁场按「分层半径」排布，场线会形成一圈圈嵌套家族
+    const radii = [0.22, 0.3, 0.42, 0.58, 0.8, 1.05];
+    const seeds = [];
+    let guard = 0;
+
+    for (let i = 0; seeds.length < n && guard < n * 6; i++, guard++) {
+      // 按长度分摊：第 i 条种子落在累积长度的 i*φ 处
+      const target = fract(i * PHI + 0.1234) * total;
+      let ci = 0;
+      while (ci < cum.length - 1 && cum[ci] < target) ci++;
+      const k = cand[ci];
+
+      // 沿该段的相对位置：另一条无理数序列，避免和选段相关
+      const t = fract(i * 0.7548776662466927 + 0.2718);
+      const i3 = 3 * k;
+      const x0 = solver.p0[i3], y0 = solver.p0[i3 + 1], z0 = solver.p0[i3 + 2];
+      const x1 = solver.p1[i3], y1 = solver.p1[i3 + 1], z1 = solver.p1[i3 + 2];
+      const base = [x0 + (x1 - x0) * t, y0 + (y1 - y0) * t, z0 + (z1 - z0) * t];
+      const dir = norm([x1 - x0, y1 - y0, z1 - z0]);
+      const ref = Math.abs(dir[1]) < 0.9 ? [0, 1, 0] : [1, 0, 0];
+      const e1 = norm(cross(dir, ref));
+      const e2 = cross(dir, e1);
+
+      // base 在米制，先换成世界单位，再叠加世界单位下的偏移
+      const bx = base[0] * M2W, by = base[1] * M2W, bz = base[2] * M2W;
+      let r;
+      if (field === 'E') {
+        // 电场线贴着导体表面长出来（半径按该段导体自己的半径换算）
+        const radW = (solver.rad ? solver.rad[k] : solver.conductorRadius) * M2W;
+        r = radW * (1.25 + 2.6 * halton(i, 3));
+      } else {
+        r = radii[Math.floor(halton(i, 5) * radii.length) % radii.length];
+      }
+      const th = i * GOLDEN_ANGLE;
+      const ca = Math.cos(th) * r, sa = Math.sin(th) * r;
+      const p = [
+        bx + e1[0] * ca + e2[0] * sa,
+        by + e1[1] * ca + e2[1] * sa,
+        bz + e1[2] * ca + e2[2] * sa,
+      ];
+
       if (p[0] < box.min[0] || p[0] > box.max[0]) continue;
       if (p[1] < box.min[1] || p[1] > box.max[1]) continue;
       if (p[2] < box.min[2] || p[2] > box.max[2]) continue;
-      if (nearestConductor(solver, p[0] * W2M, p[1] * W2M, p[2] * W2M) < 0.0016) continue;
+      if (nearestConductorRatio(solver, p[0] * W2M, p[1] * W2M, p[2] * W2M) < 1.3) continue;
       seeds.push(p);
     }
     return seeds;

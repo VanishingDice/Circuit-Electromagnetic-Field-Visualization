@@ -328,6 +328,11 @@ const spBind = (id, key, scale) => {
   el.addEventListener('input', (e) => {
     slicePane.setBox({ [key]: +e.target.value / scale });
     boxGizmo.setBox(slicePane.worldBox);
+    // 改尺寸时自动重新取景，让体块继续铺满画框
+    if (key === 'sx' || key === 'sy' || key === 'sz') {
+      clearTimeout(window.__spfit);
+      window.__spfit = setTimeout(() => slicePane.frame(), 220);
+    }
   });
 };
 spBind('sp-cx', 'cx', 20);
@@ -466,6 +471,7 @@ const qs = new URLSearchParams(location.search);
     const v = qs.get('sp' + k);
     if (v !== null) {
       slicePane.box[k] = +v / 10;
+      slicePane._fitted = true;   // 别让 setScene 的默认值覆盖掉
       const el = $(id);
       if (el) el.value = String(Math.round(slicePane.box[k] * sc));
     }

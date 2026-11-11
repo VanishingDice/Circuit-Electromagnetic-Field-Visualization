@@ -15,6 +15,9 @@ import { FieldViz } from './viz.js';
 export class SlicePane {
   constructor(container) {
     this.scene = new Scene3D(container);
+    // 体块放大后相机要能退得更远；也能推到很近看细节
+    this.scene.controls.minDistance = 0.05;
+    this.scene.controls.maxDistance = 400;
     this.viz = new FieldViz(this.scene);
 
     this.solver = null;
