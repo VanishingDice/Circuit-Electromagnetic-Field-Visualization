@@ -340,8 +340,12 @@ export class FieldViz {
     const span = Math.max(l1 - l0, 1e-6);
 
     const geo = makeArrowGeometry();
+    // 洋红是「导体内部」的标识色，不跟外面那套色标走：
+    // 内部场比外面弱几个数量级（E 约 0.1 V/m vs 外部上千），
+    // 套外部色标会全部落到最暗端、等于看不见。
+    // 亮度在内部范围内编码强弱（暗洋红 = 弱，亮洋红 = 强）。
     const mat = new THREE.MeshBasicMaterial({
-      color: 0xff5fd0, transparent: true, opacity: 1.0, depthWrite: false,
+      color: 0xffffff, transparent: true, opacity: 1.0, depthWrite: false,
     });
     const mesh = new THREE.InstancedMesh(geo, mat, items.length);
     // 实例散布在整个场景里，但几何体的包围球在原点：不关掉视锥剔除，
@@ -351,6 +355,8 @@ export class FieldViz {
     const up = new THREE.Vector3(0, 1, 0);
     const qq = new THREE.Quaternion();
     const dir = new THREE.Vector3();
+    const col = new THREE.Color();
+    const BASE = new THREE.Color(0xff5fd0);
     for (let n = 0; n < items.length; n++) {
       const it = items[n];
       const t = Math.min(1, Math.max(0, (Math.log10(Math.max(it.m, 1e-30)) - l0) / span));
@@ -361,8 +367,13 @@ export class FieldViz {
       dummy.scale.setScalar(it.len * (0.75 + 0.5 * t));
       dummy.updateMatrix();
       mesh.setMatrixAt(n, dummy.matrix);
+      // 亮度编码内部场强：暗洋红 → 亮洋红
+      const b = 0.42 + 0.58 * t;
+      col.setRGB(BASE.r * b, BASE.g * b, BASE.b * b, THREE.SRGBColorSpace);
+      mesh.setColorAt(n, col);
     }
     mesh.instanceMatrix.needsUpdate = true;
+    if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
     this.scene3d.applyClipTo(mesh);
     this.group.add(mesh);
     this.interiorArrows = mesh;
