@@ -26,6 +26,7 @@ export const TYPES = {
   battery:   { label: '电源', unit: 'V',  min: 0.5, max: 24,  def: 9,    color: '#e06c5a' },
   capacitor: { label: '电容', unit: 'µF', min: 0.1, max: 100, def: 10,   color: '#7fb3d5' },
   inductor:  { label: '电感', unit: 'mH', min: 0.1, max: 100, def: 10,   color: '#b08bd6' },
+  switch:    { label: '开关', unit: '',   min: 0,  max: 1,   def: 1,    color: '#9ad6a0' },
 };
 
 let _id = 1;
@@ -138,6 +139,7 @@ export function conductanceOf(el) {
     case 'inductor': return 1 / R_COIL;
     case 'resistor': return 1 / Math.max(el.value, 1e-3);
     case 'capacitor': return 1e-12;   // 开路（留极小电导保证矩阵不奇异）
+    case 'switch': return el.value ? 1 / R_WIRE : 1e-12;   // value=1 闭合，0 断开
     default: return 0;                // battery 用电压源方程
   }
 }
@@ -315,6 +317,27 @@ export function buildScene(circuit, solution, opts = {}) {
       case 'wire': {
         addPath([A, B], Va, Vb);
         parts.push({ kind: 'tube', pts: [A, B], radius: wireRadius, mat: 'copper' });
+        break;
+      }
+      case 'switch': {
+        const closed = !!el.value;
+        const armA = V3.add(A, V3.mul(axis, L * 0.34));
+        const armB = V3.add(A, V3.mul(axis, L * 0.66));
+        if (closed) {
+          addPath([A, B], Va, Vb);
+          parts.push({ kind: 'tube', pts: [A, B], radius: wireRadius, mat: 'copper' });
+        } else {
+          // 断开：只画两端引线，中间是开口
+          addPath([A, armA], Va, Va);
+          addPath([armB, B], Vb, Vb);
+          parts.push({ kind: 'tube', pts: [A, armA], radius: wireRadius, mat: 'copper' });
+          parts.push({ kind: 'tube', pts: [armB, B], radius: wireRadius, mat: 'copper' });
+          const leverTip = V3.add(armA, V3.mul(V3.norm(V3.cross(axis, up)), L * 0.3));
+          parts.push({ kind: 'tube', pts: [armA, leverTip], radius: wireRadius * 1.1, mat: 'lead' });
+        }
+        parts.push({ kind: 'node', pos: armA, pot: Va });
+        parts.push({ kind: 'node', pos: armB, pot: Vb });
+        parts.push({ kind: 'label', pos: V3.add(V3.mid(A, B), V3.mul(up, 0.28)), text: closed ? '闭合' : '断开' });
         break;
       }
       case 'resistor': {

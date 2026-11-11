@@ -610,14 +610,17 @@ export class SliceTool {
     this.mat3 = new THREE.MeshBasicMaterial({
       map: this.tex3, side: THREE.DoubleSide, transparent: true, opacity: 0.97,
     });
-    this.plane3 = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), this.mat3);
+    // 采样范围是 ±size（几何体 2×2 再缩放），这里必须用 2×2 的平面，
+    // 否则贴图会被放大一倍，和箭头对不上（就是「紫色区域错位」的来源）
+    this.plane3 = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), this.mat3);
+    this.plane3.renderOrder = 1;
     this.scene3.add(this.plane3);
 
     // 边框
     const bg = new THREE.BufferGeometry().setFromPoints([
-      new THREE.Vector3(-0.5, -0.5, 0), new THREE.Vector3(0.5, -0.5, 0),
-      new THREE.Vector3(0.5, 0.5, 0), new THREE.Vector3(-0.5, 0.5, 0),
-      new THREE.Vector3(-0.5, -0.5, 0),
+      new THREE.Vector3(-1, -1, 0), new THREE.Vector3(1, -1, 0),
+      new THREE.Vector3(1, 1, 0), new THREE.Vector3(-1, 1, 0),
+      new THREE.Vector3(-1, -1, 0),
     ]);
     this.border3 = new THREE.Line(bg, new THREE.LineBasicMaterial({ color: 0x7ee0ff, transparent: true, opacity: 0.8 }));
     this.scene3.add(this.border3);
@@ -712,7 +715,7 @@ export class SliceTool {
 
     // 相机只在第一次进入时摆位，之后交给用户
     if (!this._camInit3) {
-      this.cam3.position.set(S * 1.0, S * 0.75, S * 1.15);
+      this.cam3.position.set(S * 1.9, S * 1.45, S * 2.2);
       this.ctrl3.target.set(0, 0, 0);
       this.ctrl3.update();
       this._camInit3 = true;
@@ -729,13 +732,13 @@ export class SliceTool {
     if (this.state.field === 'phi') return;
 
     const plane = this.plane;
-    const NA = Math.max(4, Math.min(40, this.arrowN || 16));
-    const step = S / NA;
+    const NA = Math.max(4, Math.min(60, this.arrowN || 16));
+    const step = (2 * S) / NA;
     const items = [];
     for (let j = 0; j < NA; j++) {
       for (let i = 0; i < NA; i++) {
-        const u = ((i + 0.5) / NA - 0.5) * S;
-        const v = ((j + 0.5) / NA - 0.5) * S;
+        const u = ((i + 0.5) / NA) * 2 * S - S;
+        const v = ((j + 0.5) / NA) * 2 * S - S;
         const p = [
           plane.center[0] + plane.e1[0] * u + plane.e2[0] * v,
           plane.center[1] + plane.e1[1] * u + plane.e2[1] * v,
@@ -760,14 +763,27 @@ export class SliceTool {
     const span = Math.max(l1 - l0, 1e-6);
 
     // 注意：InstancedMesh 用 setColorAt 时不要再开 vertexColors，
-    // 否则材质会去找几何体的 color 属性，拿不到就画成黑的
-    const mat = new THREE.MeshBasicMaterial({ color: 0xffffff });
-    const mesh = new THREE.InstancedMesh(this.geo3, mat, items.length);
+    // 否则材质会去找几何体的 color 属性，拿不到就画成黑的。
+    // 另外关掉深度测试：箭头有一半埋在贴图平面里，会看不见
+    // 箭头颜色和贴图同源，直接画会在同色背景上「隐身」，
+    // 所以画两遍：先画一层放大的深色描边，再叠上本色
+    const mkMesh = (color, grow, zoff, order) => {
+      const m = new THREE.InstancedMesh(
+        this.geo3,
+        new THREE.MeshBasicMaterial({ color, depthTest: true }),
+        items.length
+      );
+      m.renderOrder = order;
+      return { mesh: m, grow, zoff };
+    };
+    const pass = [mkMesh(0x0a0f16, 1.18, -0.004 * S, 9), mkMesh(0xffffff, 1.0, 0, 10)];
+
     const dummy = new THREE.Object3D();
     const up = new THREE.Vector3(0, 1, 0);
     const q = new THREE.Quaternion();
     const dir = new THREE.Vector3();
     const col = new THREE.Color();
+
     for (let k = 0; k < items.length; k++) {
       const it = items[k];
       const t = Math.min(1, Math.max(0, (Math.log10(Math.max(it.m, 1e-30)) - l0) / span));
@@ -776,20 +792,31 @@ export class SliceTool {
       dir.normalize();
       q.setFromUnitVectors(up, dir);
       const L = step * (0.34 + 0.42 * t);
-      dummy.position.set(it.u + it.d[0] * L * 0.5, it.v + it.d[1] * L * 0.5, it.d[2] * L * 0.5);
-      dummy.quaternion.copy(q);
-      dummy.scale.set(L * 0.26, L, L * 0.26);
-      dummy.updateMatrix();
-      mesh.setMatrixAt(k, dummy.matrix);
-      // 用和贴图完全相同的归一化，颜色才对得上
       const nm = this._texNorm || this.norm;
       const cc = nm ? nm.color(it.m) : turbo3(t);
       col.setRGB(cc[0], cc[1], cc[2], THREE.SRGBColorSpace);
-      mesh.setColorAt(k, col);
+
+      for (const { mesh, grow, zoff } of pass) {
+        dummy.position.set(
+          it.u + it.d[0] * L * 0.5,
+          it.v + it.d[1] * L * 0.5,
+          it.d[2] * L * 0.5 + zoff
+        );
+        dummy.quaternion.copy(q);
+        dummy.scale.set(L * 0.26 * grow, L * grow, L * 0.26 * grow);
+        dummy.updateMatrix();
+        mesh.setMatrixAt(k, dummy.matrix);
+        if (grow === 1.0) mesh.setColorAt(k, col);
+      }
     }
-    mesh.instanceMatrix.needsUpdate = true;
-    if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
-    this.arrGroup.add(mesh);
+
+    for (const { mesh } of pass) {
+      mesh.instanceMatrix.needsUpdate = true;
+      if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
+      mesh.frustumCulled = false;
+      this.arrGroup.add(mesh);
+    }
+    this.arrGroup.position.set(0, 0, S * 0.02);
     this._camInit3 = true;
   }
 

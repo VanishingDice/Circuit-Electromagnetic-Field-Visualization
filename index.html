@@ -41,6 +41,7 @@
     <div class="topbar-actions">
       <button id="btn-slice" class="ghost" title="可移动/旋转的分析截面 + 高精度窗口">截面</button>
       <button id="btn-analysis" class="ghost" title="看清导线内部的能量流向">剖面</button>
+      <button id="btn-snap" class="ghost tiny active" title="关闭后可以放在 1/4 格的位置">吸附网格</button>
       <button id="btn-view" class="ghost" title="把相机重新对准电路（增删元件时视角不会自动跳）">复位视角</button>
       <button id="btn-rotate" class="ghost" title="让相机缓慢旋转">环绕</button>
       <button id="btn-edit" class="ghost" title="显示 / 隐藏电路编辑器">编辑器</button>
@@ -62,6 +63,7 @@
         <button class="tool" data-tool="battery">电源</button>
         <button class="tool" data-tool="capacitor">电容</button>
         <button class="tool" data-tool="inductor">电感</button>
+        <button class="tool" data-tool="switch">开关</button>
       </div>
       <div class="canvas-wrap">
         <canvas id="editorCanvas"></canvas>
@@ -94,10 +96,10 @@
         <label class="locked-wrap"><span>中心 X<button type="button" class="lockbtn" id="sp-lock-x" title="锁定后拖动截取框不会改变 X"><svg viewBox="0 0 16 16" width="11" height="11" aria-hidden="true"><path d="M4.6 7V5.2a3.4 3.4 0 016.8 0V7" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><rect x="2.6" y="7" width="10.8" height="7" rx="1.8" fill="currentColor"/></svg></button></span><input type="range" id="sp-cx" min="-150" max="150" value="0"></label>
         <label class="locked-wrap"><span>中心 Y<button type="button" class="lockbtn" id="sp-lock-y" title="锁定后拖动截取框不会改变 Y"><svg viewBox="0 0 16 16" width="11" height="11" aria-hidden="true"><path d="M4.6 7V5.2a3.4 3.4 0 016.8 0V7" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><rect x="2.6" y="7" width="10.8" height="7" rx="1.8" fill="currentColor"/></svg></button></span><input type="range" id="sp-cy" min="-100" max="150" value="7"></label>
         <label class="locked-wrap"><span>中心 Z<button type="button" class="lockbtn" id="sp-lock-z" title="锁定后拖动截取框不会改变 Z"><svg viewBox="0 0 16 16" width="11" height="11" aria-hidden="true"><path d="M4.6 7V5.2a3.4 3.4 0 016.8 0V7" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><rect x="2.6" y="7" width="10.8" height="7" rx="1.8" fill="currentColor"/></svg></button></span><input type="range" id="sp-cz" min="-150" max="150" value="0"></label>
-        <label><span>长 X</span><input type="range" id="sp-sx" min="0" max="240" value="48"></label>
-        <label><span>高 Y</span><input type="range" id="sp-sy" min="0" max="240" value="30"></label>
-        <label><span>宽 Z</span><input type="range" id="sp-sz" min="0" max="240" value="48"></label>
-        <label><span>密度</span><input type="range" id="sp-density" min="0" max="100" value="45"></label>
+        <label><span>长 X</span><input type="range" id="sp-sx" min="0" max="48" value="48"></label>
+        <label><span>高 Y</span><input type="range" id="sp-sy" min="0" max="48" value="30"></label>
+        <label><span>宽 Z</span><input type="range" id="sp-sz" min="0" max="48" value="48"></label>
+        <label><span>密度</span><input type="range" id="sp-density" min="0" max="200" value="45"></label>
       </div>
     </section>
     </div>
@@ -116,7 +118,7 @@
       <div class="overlay controls" id="controls">
         <label class="ctl">
           <span class="ctl-label" id="density-label">流线数量</span>
-          <input type="range" id="density" min="0" max="100" value="45" />
+          <input type="range" id="density" min="0" max="200" value="45" />
         </label>
         <label class="ctl">
           <span class="ctl-label">不透明度</span>
@@ -183,7 +185,7 @@
           <label><span>尺寸 <i id="sw-size-label">3.40 格</i></span>
             <input type="range" id="sw-size" min="2" max="90" value="34"></label>
           <label id="sw-dens-wrap" class="hidden"><span>箭头密度 <i id="sw-dens-label">16</i></span>
-            <input type="range" id="sw-dens" min="5" max="30" value="16"></label>
+            <input type="range" id="sw-dens" min="5" max="60" value="16"></label>
         </div>
         <div class="sw-foot">
           <div class="seg" id="sw-axis">

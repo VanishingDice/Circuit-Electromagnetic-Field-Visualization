@@ -53,8 +53,11 @@ export class Editor2D {
   gy(j) { return this.oy + j * this.cell; }
 
   toGrid(px, py) {
-    const i = Math.round((px - this.ox) / this.cell);
-    const j = Math.round((py - this.oy) / this.cell);
+    // snap = 1 时对齐整格；关掉吸附后按 1/4 格对齐（0.25 在二进制里是精确的，
+    // 连接判定仍然可用）
+    const st = this.snap === false ? 0.25 : 1;
+    const i = Math.round(((px - this.ox) / this.cell) / st) * st;
+    const j = Math.round(((py - this.oy) / this.cell) / st) * st;
     if (i < 0 || i > GW - 1 || j < 0 || j > GH - 1) return null;
     return [i, j];
   }

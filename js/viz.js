@@ -262,7 +262,7 @@ export class FieldViz {
     this.scene3d.applyClipTo(mesh);
     this.group.add(mesh);
     this.arrows = mesh;
-    this.lastStats = { count: keep.length, norm, mags };
+    this.lastStats = { count: keep.length, norm, mags, lo: loCut, hi: hiCut };
 
     // 导体内部的场：E 沿导线、B 绕轴、S 指向轴心
     if (o.interior && field !== 'phi') this.buildInteriorArrows(o, field);
@@ -444,7 +444,7 @@ export class FieldViz {
       const line = inside
         ? integrate(fn, seed, box, (sd.h || 0.004), 600, null)
         : integrate(fn, seed, box, 0.075, field === 'E' ? 260 : 190, solver);
-      if (line.length < 8) continue;
+      if (line.length < (inside ? 5 : 8)) continue;
 
       // 再看整条线：如果大半程都贴着已有线，就丢掉（只靠种子点判不够）
       if (!inside) {
@@ -533,7 +533,11 @@ export class FieldViz {
       this.group.add(inst);
     }
 
-    this.lastStats = { lines: allPts.length, marks: marks.length, norm, mags };
+    const sortedM = [...mags].sort((a, b) => a - b);
+    this.lastStats = {
+      lines: allPts.length, marks: marks.length, norm, mags,
+      lo: percentile(sortedM, 0.06), hi: percentile(sortedM, 0.995),
+    };
   }
 
   /**
@@ -711,7 +715,7 @@ export class FieldViz {
       if (pw[0] < box.min[0] || pw[0] > box.max[0]) continue;
       if (pw[1] < box.min[1] || pw[1] > box.max[1]) continue;
       if (pw[2] < box.min[2] || pw[2] > box.max[2]) continue;
-      out.push({ p: pw, inside: true, h: a * M2W * 0.35 });
+      out.push({ p: pw, inside: true, h: a * M2W * 0.1 });
     }
     return out;
   }

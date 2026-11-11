@@ -187,6 +187,7 @@ function updateViz() {
     sliceAxis: state.sliceAxis,
     slicePos: state.slicePos,
   });
+  updateLegend();
   if (viz.zero) {
     $('hint').textContent = '当前场强近似为零：电路里没有电流（或没有电荷），所以画不出场';
   }
@@ -203,7 +204,14 @@ function renderInspector(el) {
     return;
   }
   const info = TYPES[el.type];
-  if (el.type === 'wire') {
+  if (el.type === 'switch') {
+    box.innerHTML = `
+      <div class="insp-row"><span class="insp-name">开关</span>
+        <span class="insp-val">${el.value ? '闭合' : '断开'}</span></div>
+      <div class="insp-row" style="font-size:11.5px;color:#55677c">闭合时是理想导线；断开时电路在这里断掉</div>
+      <button class="ghost" id="insp-toggle">${el.value ? '断开' : '闭合'}</button>
+      <button class="ghost danger" id="insp-del">删除开关</button>`;
+  } else if (el.type === 'wire') {
     box.innerHTML = `
       <div class="insp-row"><span class="insp-name">导线</span>
         <span class="insp-val">0.02 Ω</span></div>
@@ -219,6 +227,12 @@ function renderInspector(el) {
         <input type="range" id="insp-range" min="0" max="1000" value="${valueToSlider(el.value, info)}" />
       </div>
       <button class="ghost danger" id="insp-del">删除${info.label}</button>`;
+    $('insp-toggle')?.addEventListener('click', () => {
+      el.value = el.value ? 0 : 1;
+      lastCount = circuit.elements.length;
+      rebuild();
+      renderInspector(el);
+    });
     const range = $('insp-range');
     range.addEventListener('input', () => {
       const v = sliderToValue(+range.value, info);
@@ -477,6 +491,11 @@ $('btn-simple').addEventListener('click', () => {
   rebuild();
 });
 
+$('btn-snap').addEventListener('click', () => {
+  const on = $('btn-snap').classList.toggle('active');
+  editor.snap = on;
+});
+
 $('btn-view').addEventListener('click', () => {
   if (sceneData && sceneData.bounds) scene3d.frameTo(sceneData.bounds);
 });
@@ -508,8 +527,21 @@ function updateLegend() {
     stops.push(`rgb(${Math.round(c[0] * 255)},${Math.round(c[1] * 255)},${Math.round(c[2] * 255)}) ${(i / 12 * 100).toFixed(0)}%`);
   }
   $('legend-bar').style.background = `linear-gradient(90deg, ${stops.join(',')})`;
-  $('legend-min').textContent = state.field === 'phi' ? '低' : '弱';
-  $('legend-max').textContent = state.field === 'phi' ? '高' : '强';
+  const loTxt = state.field === 'phi' ? '低' : '弱';
+  const hiTxt = state.field === 'phi' ? '高' : '强';
+  const ns = viz.lastStats;
+  const hasVals = ns && isFinite(ns.lo) && isFinite(ns.hi);
+  $('legend-min').textContent = hasVals ? `${loTxt} ${fmtVal(ns.lo)}` : loTxt;
+  $('legend-max').textContent = hasVals ? `${hiTxt} ${fmtVal(ns.hi)}` : hiTxt;
+}
+
+/** 紧凑数值写法 */
+function fmtVal(v) {
+  if (!isFinite(v)) return '—';
+  const a = Math.abs(v);
+  if (a === 0) return '0';
+  if (a >= 1e-2 && a < 1e5) return String(+v.toPrecision(3));
+  return v.toExponential(2);
 }
 
 /* 键盘：数字键切场 */

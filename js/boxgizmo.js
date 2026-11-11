@@ -59,13 +59,37 @@ export class BoxGizmo {
       this.handles.push(m);
       this.group.add(m);
     }
+    // 中心的移动手柄：八面体 + 三根轴向短杆，一眼能看出是「三维移动」，
+    // 而且关掉深度测试，永远浮在最上层（不会被导体挡住）
+    this.moveGroup = new THREE.Group();
+    this.group.add(this.moveGroup);
+
     this.centerHandle = new THREE.Mesh(
       new THREE.OctahedronGeometry(1, 0),
-      new THREE.MeshBasicMaterial({ color: 0x9fe4ff, transparent: true, opacity: 0.55, depthWrite: false })
+      new THREE.MeshBasicMaterial({ color: 0xd7f1ff, transparent: true, opacity: 0.95, depthTest: false })
     );
     this.centerHandle.userData = { kind: 'move' };
+    this.centerHandle.renderOrder = 30;
+    this.moveGroup.add(this.centerHandle);
     this.handles.push(this.centerHandle);
-    this.group.add(this.centerHandle);
+
+    const barGeo = new THREE.CylinderGeometry(0.075, 0.075, 1, 8);
+    this.moveBars = [];
+    for (const [rot, color] of [
+      [[0, 0, -Math.PI / 2], 0xff7b7b],
+      [[0, 0, 0], 0x7bffa8],
+      [[Math.PI / 2, 0, 0], 0x7bb6ff],
+    ]) {
+      const b = new THREE.Mesh(barGeo, new THREE.MeshBasicMaterial({
+        color, transparent: true, opacity: 0.9, depthTest: false,
+      }));
+      b.rotation.set(rot[0], rot[1], rot[2]);
+      b.renderOrder = 30;
+      b.userData = { kind: 'move' };
+      this.moveGroup.add(b);
+      this.handles.push(b);
+      this.moveBars.push(b);
+    }
 
     this.raycaster = new THREE.Raycaster();
     this.pointer = new THREE.Vector2();
@@ -88,7 +112,17 @@ export class BoxGizmo {
     this.group.position.set(c[0], c[1], c[2]);
     this.edges.scale.set(s[0], s[1], s[2]);
 
-    const hs = Math.min(0.26, Math.max(0.07, Math.min(s[0], s[1], s[2]) * 0.12));
+    const hs = Math.min(0.4, Math.max(0.1, Math.min(s[0], s[1], s[2]) * 0.18));
+    // 三根轴杆：沿各自轴伸出，长度随把手尺寸
+    if (this.moveBars) {
+      const dirs = [[1, 0, 0], [0, 1, 0], [0, 0, 1]];
+      this.moveBars.forEach((b, i) => {
+        const d = dirs[i];
+        const L = hs * 3.4;
+        b.position.set(d[0] * L * 0.5, d[1] * L * 0.5, d[2] * L * 0.5);
+        b.scale.set(hs * 0.9, L, hs * 0.9);
+      });
+    }
     for (const h of this.handles) {
       if (h.userData.kind === 'face') {
         const { axis, sign } = h.userData;
@@ -97,9 +131,9 @@ export class BoxGizmo {
         p[k] = sign * s[k] / 2;
         h.position.set(p[0], p[1], p[2]);
         h.scale.set(hs, hs, 1);
-      } else {
+      } else if (h === this.centerHandle) {
         h.position.set(0, 0, 0);
-        h.scale.setScalar(hs * 0.42);
+        h.scale.setScalar(hs * 0.85);
       }
     }
     this.center = c;
