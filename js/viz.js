@@ -198,7 +198,9 @@ export class FieldViz {
         for (let k = 0; k < nz; k++) {
           const z = box.min[2] + (k + 0.5) / nz * span[2];
           // 跳过离导体太近的点（否则箭头被奇异性拉爆）
-          if (nearestConductor(solver, x * W2M, y * W2M, z * W2M) < 0.004) continue;
+          // 用「距离/该段导体半径」判断，绝对值 4mm 在小盒子里(吸附导线后只有几毫米)
+          // 会把所有采样点都滤掉 → 箭头模式看起来什么都没有
+          if (nearestConductorRatio(solver, x * W2M, y * W2M, z * W2M) < 1.35) continue;
           const v = fn(x * W2M, y * W2M, z * W2M);
           const m = Math.hypot(v[0], v[1], v[2]);
           if (!(m > 0) || !isFinite(m)) continue;
@@ -230,7 +232,11 @@ export class FieldViz {
     const q = new THREE.Quaternion();
     const dir = new THREE.Vector3();
     const color = new THREE.Color();
-    const lenBase = 0.22;
+    // 箭头长度跟着采样盒子走：小盒子里用 0.22 格的箭头会糊满整屏
+    const spanMin = Math.min(
+      box.max[0] - box.min[0], box.max[1] - box.min[1], box.max[2] - box.min[2]
+    );
+    const lenBase = Math.max(0.015, Math.min(0.22, spanMin * 0.09));
     for (let n = 0; n < keep.length; n++) {
       const i = keep[n];
       const p = pts[i], d = dirs[i];
@@ -356,6 +362,22 @@ export class FieldViz {
    * 沿弧长用黄金比、绕轴用黄金角、半径用 Halton 序列 —— 分布均匀且每次重建完全一致。
    */
   makeSeeds(solver, box, n, field) {
+    // seedMode = 'uniform' 时在盒内均匀撒点（只用于对比实验）
+    if (this.seedMode === 'uniform') {
+      const seeds = [];
+      const fract = (x) => x - Math.floor(x);
+      const span = [box.max[0] - box.min[0], box.max[1] - box.min[1], box.max[2] - box.min[2]];
+      for (let i = 0; seeds.length < n && i < n * 8; i++) {
+        const p = [
+          box.min[0] + fract(i * 0.6180339887 + 0.11) * span[0],
+          box.min[1] + fract(i * 0.7548776662 + 0.37) * span[1],
+          box.min[2] + fract(i * 0.5698402910 + 0.73) * span[2],
+        ];
+        if (nearestConductorRatio(solver, p[0] * W2M, p[1] * W2M, p[2] * W2M) < 1.3) continue;
+        seeds.push(p);
+      }
+      return seeds;
+    }
     const norm = (v) => { const l = Math.hypot(v[0], v[1], v[2]) || 1; return [v[0] / l, v[1] / l, v[2] / l]; };
     const cross = (a, b) => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
     const fract = (x) => x - Math.floor(x);

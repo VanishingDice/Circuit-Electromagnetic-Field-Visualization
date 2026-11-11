@@ -476,6 +476,7 @@ const qs = new URLSearchParams(location.search);
       if (el) el.value = String(Math.round(slicePane.box[k] * sc));
     }
   }
+  if (qs.get('seeds') === 'uniform') viz.seedMode = 'uniform';
   if (qs.get('wire')) state.wireRadius = Math.min(0.14, Math.max(0.01, +qs.get('wire') / 100));
   if (qs.get('editor') === '0') {
     $('leftCol').classList.add('hidden');
@@ -634,6 +635,21 @@ function runSelfTest() {
       ok(true, '拖动截取框 setWorldBox');
     } catch (err) {
       ok(false, '拖动截取框抛错', String(err.message).slice(0, 80));
+    }
+
+    // 9.56 移动体块时，面板相机要跟着平移（画面里框在动、视角不动）
+    try {
+      const c0 = slicePane.worldBox.center.slice();
+      const cam0 = slicePane.scene.camera.position.clone();
+      slicePane.setBox({ cx: slicePane.box.cx + 0.5 });
+      const c1 = slicePane.worldBox.center;
+      const cam1 = slicePane.scene.camera.position;
+      const dc = c1[0] - c0[0];
+      const dcam = cam1.x - cam0.x;
+      ok(Math.abs(dc) > 1e-6 && Math.abs(dcam - dc) < 1e-6, '体块移动时面板相机同步平移');
+      slicePane.setBox({ cx: slicePane.box.cx - 0.5 });
+    } catch (err) {
+      ok(false, '相机同步平移测试抛错', String(err.message).slice(0, 80));
     }
 
     // 9.57 吸附导线

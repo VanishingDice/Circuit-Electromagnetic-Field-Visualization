@@ -121,8 +121,16 @@ export class SlicePane {
 
   applyBoxChange() {
     const box = this.worldBox;
-    // 旋转中心永远是体块中心
-    this.scene.controls.target.set(box.center[0], box.center[1], box.center[2]);
+    const c = box.center;
+    // 体块移动时，相机和观察点一起平移 → 画面里看到的是「框在动、视角不动」；
+    // 而轨道旋转仍然以体块中心为轴心
+    if (this._lastC) {
+      const dx = c[0] - this._lastC[0], dy = c[1] - this._lastC[1], dz = c[2] - this._lastC[2];
+      const cam = this.scene.camera;
+      cam.position.x += dx; cam.position.y += dy; cam.position.z += dz;
+    }
+    this._lastC = c;
+    this.scene.controls.target.set(c[0], c[1], c[2]);
     this.scene.setClipPlanes(SlicePane.planesFor(box));
     this.scene.applyClipTo(this.scene.circuitGroup);
     this.syncOutline();
@@ -177,6 +185,7 @@ export class SlicePane {
       c[1] + dir[1] * dist,
       c[2] + dir[2] * dist
     );
+    this._lastC = c;
     this.scene.controls.update();
   }
 
