@@ -36,6 +36,7 @@ const state = {
   slicePos: 0,
   colorByPot: true,
   interior: false,     // 是否画导体内部的场
+  boxLock: { x: false, y: false, z: false },   // 锁定后拖动截取框不会改这一轴
   autoRotate: false,
   wireRadius: 0.05,     // 世界单位（1 单位 = 1 cm）
   analysisOn: false,
@@ -82,8 +83,9 @@ const slice = new SliceTool(scene3d, {
   cxLabel: $('sw-cx-label'), cyLabel: $('sw-cy-label'), czLabel: $('sw-cz-label'),
   sizeLabel: $('sw-size-label'),
   field: $('sw-field'), axisButtons: [...document.querySelectorAll('#sw-axis button')],
-  wireBtn: $('sw-wire'), popBtn: $('sw-pop'), closeBtn: $('sw-close'), probe: $('sw-probe'),
+  wireBtn: $('sw-wire'), closeBtn: $('sw-close'), probe: $('sw-probe'),
   canvas3: $('sw-canvas3'), mode3dBtn: $('sw-mode3d'),
+  dens: $('sw-dens'), densWrap: $('sw-dens-wrap'), densLabel: $('sw-dens-label'),
 });
 
 /* ---------------- 求解 + 重建 ---------------- */
@@ -338,6 +340,9 @@ const spBind = (id, key, scale) => {
   const el = $(id);
   if (!el) return;
   el.addEventListener('input', (e) => {
+    if (key === 'cx' && state.boxLock.x) return;
+    if (key === 'cy' && state.boxLock.y) return;
+    if (key === 'cz' && state.boxLock.z) return;
     slicePane.setBox({ [key]: +e.target.value / scale });
     boxGizmo.setBox(slicePane.worldBox);
     // 改尺寸时自动重新取景，让体块继续铺满画框
@@ -353,6 +358,23 @@ spBind('sp-cz', 'cz', 20);
 spBind('sp-sx', 'sx', 10);
 spBind('sp-sy', 'sy', 10);
 spBind('sp-sz', 'sz', 10);
+// 中心轴锁定：锁住后拖动截取框 / 拖滑杆都不会改这一轴
+const LOCK_SLIDER = { x: 'sp-cx', y: 'sp-cy', z: 'sp-cz' };
+for (const ax of ['x', 'y', 'z']) {
+  const btn = $('sp-lock-' + ax);
+  if (!btn) continue;
+  btn.addEventListener('click', (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    state.boxLock[ax] = !state.boxLock[ax];
+    btn.classList.toggle('on', state.boxLock[ax]);
+    const rng = $(LOCK_SLIDER[ax]);
+    if (rng) rng.disabled = state.boxLock[ax];
+    slicePane.setLocks(state.boxLock);
+  });
+}
+slicePane.setLocks(state.boxLock);
+
 $('sp-fit')?.addEventListener('click', () => slicePane.frame());
 $('sp-snap')?.addEventListener('click', () => {
   slicePane.snapToWire();
@@ -758,6 +780,30 @@ function runSelfTest() {
       ok(true, '截取空间面板');
     } catch (err) {
       ok(false, '截取空间面板抛错', String(err.message).slice(0, 80));
+    }
+
+    // 9.58 中心轴锁定 + 独立窗口已移除
+    try {
+      ok(document.getElementById('sw-pop') === null, '独立窗口按钮已移除');
+      const wb = slicePane.worldBox;
+      const min0 = [...wb.min], max0 = [...wb.max];
+      const cx0 = slicePane.box.cx;
+
+      state.boxLock.x = true;
+      slicePane.setLocks(state.boxLock);
+      slicePane.setWorldBox([min0[0] + 2, min0[1], min0[2]], [max0[0] + 2, max0[1], max0[2]]);
+      ok(Math.abs(slicePane.box.cx - cx0) < 1e-9, '锁定 X 后拖动不改中心 X');
+
+      state.boxLock.x = false;
+      slicePane.setLocks(state.boxLock);
+      slicePane.setWorldBox([min0[0] + 2, min0[1], min0[2]], [max0[0] + 2, max0[1], max0[2]]);
+      ok(Math.abs(slicePane.box.cx - cx0 - 2) < 0.05, '解锁后拖动恢复修改中心 X');
+
+      slicePane.setWorldBox(min0, max0);
+    } catch (err) {
+      ok(false, '锁定轴测试抛错', String(err.message).slice(0, 80));
+      state.boxLock.x = false;
+      slicePane.setLocks(state.boxLock);
     }
 
     // 9.59 面板里的导体内部箭头

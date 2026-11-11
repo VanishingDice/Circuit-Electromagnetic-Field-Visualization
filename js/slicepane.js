@@ -57,9 +57,10 @@ export class SlicePane {
   setWorldBox(min, max) {
     const base = this.base;
     const c = [(min[0] + max[0]) / 2, (min[1] + max[1]) / 2, (min[2] + max[2]) / 2];
-    this.box.cx = c[0] - base[0];
-    this.box.cy = c[1] - base[1];
-    this.box.cz = c[2] - base[2];
+    const L = this.locks || {};
+    this.box.cx = L.x ? this.box.cx : c[0] - base[0];
+    this.box.cy = L.y ? this.box.cy : c[1] - base[1];
+    this.box.cz = L.z ? this.box.cz : c[2] - base[2];
     this.box.sx = Math.max(0.004, (max[0] - min[0]) / 2);
     this.box.sy = Math.max(0.004, (max[1] - min[1]) / 2);
     this.box.sz = Math.max(0.004, (max[2] - min[2]) / 2);
@@ -87,6 +88,9 @@ export class SlicePane {
   }
 
   /* ---------------- 场景 ---------------- */
+  /** 锁定的中心轴：锁定后拖动截取框不会改这一轴 */
+  setLocks(l) { this.locks = { x: !!(l && l.x), y: !!(l && l.y), z: !!(l && l.z) }; }
+
   setScene({ solver, bounds, parts, colorByPotential, conductorR }) {
     this.solver = solver;
     this.bounds = bounds;
@@ -99,10 +103,11 @@ export class SlicePane {
       (bounds.min[2] + bounds.max[2]) / 2,
     ];
     if (!this._fitted) {
-      const span = Math.max(bounds.max[0] - bounds.min[0], bounds.max[2] - bounds.min[2], 3);
-      this.box.sx = this.box.sz = Math.max(1.2, span * 0.42);
-      this.box.sy = Math.max(0.9, span * 0.26);
       this._fitted = true;
+      this._fittedOnce = true;
+      // 初始位置 = 吸附到发热最大的那根导线（比铺满整个电路好用）
+      this.snapToWire();
+      this._framed = false;
     }
     const box = this.worldBox;
     this.scene.setClipPlanes(SlicePane.planesFor(box));
@@ -115,7 +120,12 @@ export class SlicePane {
 
   /** 只改体块：重设裁剪面 + 重算可视化 */
   setBox(patch) {
-    Object.assign(this.box, patch);
+    const L = this.locks || {};
+    const p = { ...patch };
+    if (L.x) delete p.cx;
+    if (L.y) delete p.cy;
+    if (L.z) delete p.cz;
+    Object.assign(this.box, p);
     this.applyBoxChange();
   }
 

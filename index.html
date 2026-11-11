@@ -91,9 +91,9 @@
       </div>
       <div id="sp-container"></div>
       <div class="sp-ctl">
-        <label><span>中心 X</span><input type="range" id="sp-cx" min="-150" max="150" value="0"></label>
-        <label><span>中心 Y</span><input type="range" id="sp-cy" min="-100" max="150" value="7"></label>
-        <label><span>中心 Z</span><input type="range" id="sp-cz" min="-150" max="150" value="0"></label>
+        <label class="locked-wrap"><span>中心 X<button type="button" class="lockbtn" id="sp-lock-x" title="锁定后拖动截取框不会改变 X">锁</button></span><input type="range" id="sp-cx" min="-150" max="150" value="0"></label>
+        <label class="locked-wrap"><span>中心 Y<button type="button" class="lockbtn" id="sp-lock-y" title="锁定后拖动截取框不会改变 Y">锁</button></span><input type="range" id="sp-cy" min="-100" max="150" value="7"></label>
+        <label class="locked-wrap"><span>中心 Z<button type="button" class="lockbtn" id="sp-lock-z" title="锁定后拖动截取框不会改变 Z">锁</button></span><input type="range" id="sp-cz" min="-150" max="150" value="0"></label>
         <label><span>长 X</span><input type="range" id="sp-sx" min="0" max="240" value="48"></label>
         <label><span>高 Y</span><input type="range" id="sp-sy" min="0" max="240" value="30"></label>
         <label><span>宽 Z</span><input type="range" id="sp-sz" min="0" max="240" value="48"></label>
@@ -152,7 +152,6 @@
           <span class="sw-title">截面 · <b id="sw-title">|S| 能流</b></span>
           <span class="sw-btns">
             <button id="sw-mode3d" title="把截面图放到可旋转的立体视图里（平面贴图 + 立体箭头）">立体</button>
-            <button id="sw-pop" title="在独立窗口里打开（可拖到另一块屏幕）">独立窗口</button>
             <button id="sw-close" title="关闭">×</button>
           </span>
         </div>
@@ -183,6 +182,8 @@
           <label><span>俯仰</span><input type="range" id="sw-pitch" min="-90" max="90" value="90"></label>
           <label><span>尺寸 <i id="sw-size-label">3.40 格</i></span>
             <input type="range" id="sw-size" min="2" max="90" value="34"></label>
+          <label id="sw-dens-wrap" class="hidden"><span>箭头密度 <i id="sw-dens-label">16</i></span>
+            <input type="range" id="sw-dens" min="5" max="30" value="16"></label>
         </div>
         <div class="sw-foot">
           <div class="seg" id="sw-axis">

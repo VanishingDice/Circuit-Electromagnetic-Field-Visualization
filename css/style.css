@@ -480,6 +480,26 @@ input[type=range]::-webkit-slider-thumb {
   touch-action: none;
 }
 
+.lockbtn {
+  margin-left: 6px;
+  padding: 0 5px;
+  height: 17px;
+  line-height: 15px;
+  font-size: 10px;
+  color: var(--muted);
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 5px;
+  cursor: pointer;
+}
+.lockbtn:hover { color: var(--fg); }
+.lockbtn.on {
+  color: #0a1016;
+  background: #6ee7a8;
+  border-color: #6ee7a8;
+}
+.locked-wrap input[type="range"]:disabled { opacity: 0.35; }
+
 .sw-tip {
   margin: 4px 0 2px;
   font-size: 11px;

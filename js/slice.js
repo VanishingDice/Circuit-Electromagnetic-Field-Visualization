@@ -107,6 +107,7 @@ export class SliceTool {
 
     this.state = { cx: 0, cy: 0, cz: 0, yaw: 0, pitch: 90, size: 3.4, field: 'S', visible: false };
     this.mode3d = false;     // 窗口是否显示「立体视图」
+    this.arrowN = 16;        // 立体视图的箭头网格密度（可调）
     this._paintTick = 0;
 
     this.group = new THREE.Group();
@@ -452,42 +453,6 @@ export class SliceTool {
     this.dom.legendHi.textContent = fmtSci(this.norm.hi);
     this.dom.unit.textContent = f.unit;
     this.dom.title.textContent = f.label;
-    if (this.popup && !this.popup.closed) this.pushPopup();
-  }
-
-  /* ---------------- 独立窗口 ---------------- */
-  openPopup() {
-    try {
-      const w = window.open('', 'emlab-slice', 'width=880,height=980');
-      if (!w) return false;
-      w.document.write(`<!DOCTYPE html><html lang="zh-CN"><head><meta charset="utf-8">
-        <title>电磁场实验台 · 截面</title>
-        <style>html,body{margin:0;background:#070a0f;color:#dbe6f2;
-          font:13px/1.5 'Segoe UI','Microsoft YaHei',sans-serif}
-        #t{padding:10px 14px;font-weight:600;color:#9fc6ea}
-        #img{display:block;width:100%;image-rendering:auto}
-        #lg{padding:8px 14px 16px;color:#7d8fa6;font-size:11.5px}</style></head>
-        <body><div id="t"></div><img id="img" alt="section"><div id="lg"></div></body></html>`);
-      w.document.close();
-      this.popup = w;
-      this.pushPopup();
-      return true;
-    } catch (e) {
-      console.warn('独立窗口打开失败', e);
-      return false;
-    }
-  }
-
-  pushPopup() {
-    const { popup } = this;
-    if (!popup || popup.closed) return;
-    try {
-      popup.document.getElementById('img').src = this.dom.canvas.toDataURL('image/png');
-      popup.document.getElementById('t').textContent =
-        `${FIELDS[this.state.field].label} · ${this.valueN}² 采样 · ${this.state.size.toFixed(2)} 格`;
-      popup.document.getElementById('lg').textContent =
-        `色标 ${fmtSci(this.norm.lo)} → ${fmtSci(this.norm.hi)} ${FIELDS[this.state.field].unit}`;
-    } catch (e) { /* 被跨窗口策略拦掉就算了 */ }
   }
 
   /* ---------------- 交互 ---------------- */
@@ -570,8 +535,14 @@ export class SliceTool {
       this.update();
     }));
     if (d.mode3dBtn) d.mode3dBtn.addEventListener('click', () => this.setMode3D(!this.mode3d));
+    if (d.dens) {
+      d.dens.addEventListener('input', (e) => {
+        this.arrowN = Math.max(4, Math.min(40, +e.target.value));
+        if (d.densLabel) d.densLabel.textContent = String(this.arrowN);
+        this.update3D();
+      });
+    }
     d.wireBtn.addEventListener('click', () => this.attachToWire());
-    d.popBtn.addEventListener('click', () => this.openPopup());
     d.closeBtn.addEventListener('click', () => this.show(false));
     d.canvas.addEventListener('mousemove', (e) => this.probe(e));
     d.canvas.addEventListener('mouseleave', () => { d.probe.textContent = ''; });
@@ -741,7 +712,7 @@ export class SliceTool {
     if (this.state.field === 'phi') return;
 
     const plane = this.plane;
-    const NA = 13;
+    const NA = Math.max(4, Math.min(40, this.arrowN || 16));
     const step = S / NA;
     const items = [];
     for (let j = 0; j < NA; j++) {
@@ -787,13 +758,15 @@ export class SliceTool {
       if (dir.lengthSq() < 1e-12) dir.set(0, 0, 1);
       dir.normalize();
       q.setFromUnitVectors(up, dir);
-      const L = step * (0.45 + 0.55 * t);
+      const L = step * (0.34 + 0.42 * t);
       dummy.position.set(it.u + it.d[0] * L * 0.5, it.v + it.d[1] * L * 0.5, it.d[2] * L * 0.5);
       dummy.quaternion.copy(q);
-      dummy.scale.set(L * 0.34, L, L * 0.34);
+      dummy.scale.set(L * 0.26, L, L * 0.26);
       dummy.updateMatrix();
       mesh.setMatrixAt(k, dummy.matrix);
-      const cc = turbo3(t);
+      // 用和贴图完全相同的归一化，颜色才对得上
+      const nm = this._texNorm || this.norm;
+      const cc = nm ? nm.color(it.m) : turbo3(t);
       col.setRGB(cc[0], cc[1], cc[2], THREE.SRGBColorSpace);
       mesh.setColorAt(k, col);
     }
@@ -818,6 +791,7 @@ export class SliceTool {
       this._raf3 = null;
     }
     if (this.dom.probe) this.dom.probe.classList.toggle('hidden', this.mode3d);
+    if (this.dom.densWrap) this.dom.densWrap.classList.toggle('hidden', !this.mode3d);
   }
 
   /** 平面中心投影到页面坐标（自检/调试用） */
