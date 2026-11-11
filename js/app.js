@@ -58,26 +58,16 @@ const editor = new Editor2D(editorCanvas, {
 });
 editor.setCircuit(circuit);
 const analysis = new AnalysisCard($('analysis'));
-const volume = new VolumeTool(scene3d, {
-  win: $('volwin'), head: $('vw-head'), canvas: $('vw-canvas'),
-  title: $('vw-title'), res: $('vw-res'),
-  progress: $('vw-progress'), progressWrap: $('vw-progress-wrap'),
-  legend: $('vw-legend'), legendLo: $('vw-lo'), legendHi: $('vw-hi'), unit: $('vw-unit'),
-  cx: $('vw-cx'), cy: $('vw-cy'), cz: $('vw-cz'), half: $('vw-half'),
-  cxLabel: $('vw-cx-label'), cyLabel: $('vw-cy-label'), czLabel: $('vw-cz-label'),
-  halfLabel: $('vw-half-label'),
-  yaw: $('vw-yaw'), pitch: $('vw-pitch'), gain: $('vw-gain'),
-  thresh: $('vw-thresh'), threshLabel: $('vw-thresh-label'),
-  field: $('vw-field'), mode: $('vw-mode'), resSel: $('vw-res-sel'),
-  popBtn: $('vw-pop'), closeBtn: $('vw-close'), reBtn: $('vw-re'),
-});
+const volume = new VolumeTool(scene3d, $('volwin'));
 const slice = new SliceTool(scene3d, {
   win: $('slicewin'), head: $('sw-head'), canvas: $('sw-canvas'),
   title: $('sw-title'), res: $('sw-res'),
   progress: $('sw-progress'), progressWrap: $('sw-progress-wrap'),
   legend: $('sw-legend'), legendLo: $('sw-lo'), legendHi: $('sw-hi'), unit: $('sw-unit'),
-  pos: $('sw-pos'), yaw: $('sw-yaw'), pitch: $('sw-pitch'), size: $('sw-size'),
-  offsetLabel: $('sw-offset'), sizeLabel: $('sw-size-label'),
+  cx: $('sw-cx'), cy: $('sw-cy'), cz: $('sw-cz'),
+  yaw: $('sw-yaw'), pitch: $('sw-pitch'), size: $('sw-size'),
+  cxLabel: $('sw-cx-label'), cyLabel: $('sw-cy-label'), czLabel: $('sw-cz-label'),
+  sizeLabel: $('sw-size-label'),
   field: $('sw-field'), axisButtons: [...document.querySelectorAll('#sw-axis button')],
   wireBtn: $('sw-wire'), popBtn: $('sw-pop'), closeBtn: $('sw-close'), probe: $('sw-probe'),
 });
@@ -366,8 +356,8 @@ window.addEventListener('keydown', (e) => {
 
 /* ---------------- 启动 ---------------- */
 // 支持 ?field=E&mode=arrows&density=60&editor=0 之类的分享链接
+const qs = new URLSearchParams(location.search);
 (function applyQuery() {
-  const qs = new URLSearchParams(location.search);
   const f = qs.get('field');
   if (f && FIELD_INFO[f]) {
     state.field = f;
@@ -387,7 +377,11 @@ window.addEventListener('keydown', (e) => {
     volume.state.res = +qs.get('volres');
     volume.state.imgRes = Math.min(512, 220 + volume.state.res * 2.6);
   }
-  if (qs.get('volhalf')) { volume.state.half = +qs.get('volhalf') / 10; volume._fitted = true; }
+  if (qs.get('volhalf')) {
+    const h = +qs.get('volhalf') / 10;
+    volume.state.sx = volume.state.sy = volume.state.sz = h;
+    volume._fitted = true;
+  }
   if (qs.get('volyaw')) volume.state.yaw = +qs.get('volyaw');
   if (qs.get('volpitch')) volume.state.pitch = +qs.get('volpitch');
   if (qs.get('volthresh')) volume.state.thresh = +qs.get('volthresh') / 100;
@@ -423,6 +417,7 @@ if (state.volumeOn) {
   $('btn-volume').classList.add('active');
   volume.show(true);
   volume.setScene({ solver: sceneData?.solver, bounds: sceneData?.bounds });
+  if (qs.get('volpop') === '1') setTimeout(() => volume.openPopup(), 1200);
 }
 if (state.sliceOn) {
   $('btn-slice').classList.add('active');

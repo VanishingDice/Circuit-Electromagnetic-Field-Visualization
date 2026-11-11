@@ -462,5 +462,7 @@ input[type=range]::-webkit-slider-thumb {
 }
 
 /* 空间（体积）窗口：默认摆在截面窗口右边，可拖动 */
-.volwin { left: 400px; }
+.volwin { left: 400px; width: 396px; }
+.volwin .sw-ctl { display: grid; grid-template-columns: 1fr 1fr; gap: 6px 14px; }
+.volwin .sw-ctl label { font-size: 10.5px; }
 .volwin .sw-canvas canvas { background: #04070b; }

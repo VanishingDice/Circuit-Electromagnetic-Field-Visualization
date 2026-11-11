@@ -99,7 +99,7 @@ export class SliceTool {
     this.norm = null;
     this._timer = null;
 
-    this.state = { offset: 0, yaw: 0, pitch: 90, size: 3.4, field: 'S', visible: false };
+    this.state = { cx: 0, cy: 0, cz: 0, yaw: 0, pitch: 90, size: 3.4, field: 'S', visible: false };
 
     this.group = new THREE.Group();
     this.group.visible = false;
@@ -157,10 +157,12 @@ export class SliceTool {
     const n = normalFromAngles(this.state.yaw, this.state.pitch);
     const [e1, e2] = basisFromNormal(n);
     const base = this.base || [0, 0, 0];
+    // 中心只由 XYZ 三个坐标决定；yaw/pitch 只改朝向，
+    // 所以旋转是以平面的几何中心为轴心转，平面不会跟着法线乱跑。
     const center = [
-      base[0] + n[0] * this.state.offset,
-      base[1] + n[1] * this.state.offset,
-      base[2] + n[2] * this.state.offset,
+      base[0] + this.state.cx,
+      base[1] + this.state.cy,
+      base[2] + this.state.cz,
     ];
     return { center, n, e1, e2, size: this.state.size };
   }
@@ -452,12 +454,15 @@ export class SliceTool {
     const p0 = [solver.p0[i3], solver.p0[i3 + 1], solver.p0[i3 + 2]];
     const p1 = [solver.p1[i3], solver.p1[i3 + 1], solver.p1[i3 + 2]];
     const n = norm([p1[0] - p0[0], p1[1] - p0[1], p1[2] - p0[2]]);
-    this.base = [
+    const mid = [
       ((p0[0] + p1[0]) / 2) * M2W,
       ((p0[1] + p1[1]) / 2) * M2W,
       ((p0[2] + p1[2]) / 2) * M2W,
     ];
-    this.state.offset = 0;
+    const base = this.base || [0, 0, 0];
+    this.state.cx = mid[0] - base[0];
+    this.state.cy = mid[1] - base[1];
+    this.state.cz = mid[2] - base[2];
     this.state.size = Math.max(this.conductorR * M2W * 4.5, 0.15);
     this.state.pitch = Math.asin(Math.max(-1, Math.min(1, n[1]))) / DEG;
     this.state.yaw = Math.atan2(n[0], n[2]) / DEG;
@@ -467,19 +472,33 @@ export class SliceTool {
 
   syncInputs() {
     const s = this.state;
-    this.dom.pos.value = String(Math.round(s.offset * 20));
+    this.dom.cx.value = String(Math.round(s.cx * 20));
+    this.dom.cy.value = String(Math.round(s.cy * 20));
+    this.dom.cz.value = String(Math.round(s.cz * 20));
     this.dom.yaw.value = String(Math.round(((s.yaw % 360) + 360) % 360));
     this.dom.pitch.value = String(Math.round(s.pitch));
     this.dom.size.value = String(Math.round(s.size * 10));
-    this.dom.offsetLabel.textContent = `${s.offset.toFixed(2)} 格`;
+    this.dom.cxLabel.textContent = s.cx.toFixed(2);
+    this.dom.cyLabel.textContent = s.cy.toFixed(2);
+    this.dom.czLabel.textContent = s.cz.toFixed(2);
     this.dom.sizeLabel.textContent = `${s.size.toFixed(2)} 格`;
   }
 
   _bindDom() {
     const d = this.dom;
-    d.pos.addEventListener('input', (e) => {
-      this.state.offset = +e.target.value / 20;
-      d.offsetLabel.textContent = `${this.state.offset.toFixed(2)} 格`;
+    d.cx.addEventListener('input', (e) => {
+      this.state.cx = +e.target.value / 20;
+      d.cxLabel.textContent = this.state.cx.toFixed(2);
+      this.update();
+    });
+    d.cy.addEventListener('input', (e) => {
+      this.state.cy = +e.target.value / 20;
+      d.cyLabel.textContent = this.state.cy.toFixed(2);
+      this.update();
+    });
+    d.cz.addEventListener('input', (e) => {
+      this.state.cz = +e.target.value / 20;
+      d.czLabel.textContent = this.state.cz.toFixed(2);
       this.update();
     });
     d.yaw.addEventListener('input', (e) => { this.state.yaw = +e.target.value; this.update(); });

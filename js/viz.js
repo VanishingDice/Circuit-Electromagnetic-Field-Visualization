@@ -541,8 +541,8 @@ function makeArrowGeometry() {
 }
 
 function makeStreamArrowGeometry() {
-  const g = new THREE.ConeGeometry(0.028, 0.105, 5, 1, true);
-  g.translate(0, 0.052, 0);
+  const g = new THREE.ConeGeometry(0.019, 0.072, 5, 1, true);
+  g.translate(0, 0.036, 0);
   return g;
 }
 

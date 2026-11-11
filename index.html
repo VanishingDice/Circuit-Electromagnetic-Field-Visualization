@@ -137,16 +137,21 @@
         </div>
         <div class="sw-ctl">
           <label><span>中心 X <i id="vw-cx-label">0.00</i></span>
-            <input type="range" id="vw-cx" min="-80" max="80" value="0"></label>
+            <input type="range" id="vw-cx" min="-150" max="150" value="0"></label>
           <label><span>中心 Y <i id="vw-cy-label">0.40</i></span>
-            <input type="range" id="vw-cy" min="-40" max="80" value="8"></label>
+            <input type="range" id="vw-cy" min="-100" max="150" value="8"></label>
           <label><span>中心 Z <i id="vw-cz-label">0.00</i></span>
-            <input type="range" id="vw-cz" min="-80" max="80" value="0"></label>
-          <label><span>区域边长 <i id="vw-half-label">5.20 格</i></span>
-            <input type="range" id="vw-half" min="4" max="90" value="26"></label>
-          <label><span>视角 偏航 / 俯仰</span>
+            <input type="range" id="vw-cz" min="-150" max="150" value="0"></label>
+          <label><span>尺寸 X <i id="vw-sx-label">5.20</i></span>
+            <input type="range" id="vw-sx" min="4" max="90" value="26"></label>
+          <label><span>尺寸 Y <i id="vw-sy-label">5.20</i></span>
+            <input type="range" id="vw-sy" min="4" max="90" value="26"></label>
+          <label><span>尺寸 Z <i id="vw-sz-label">5.20</i></span>
+            <input type="range" id="vw-sz" min="4" max="90" value="26"></label>
+          <label><span>视角 偏航</span>
             <input type="range" id="vw-yaw" min="0" max="360" value="32"></label>
-          <label><span>&nbsp;</span><input type="range" id="vw-pitch" min="-85" max="85" value="46"></label>
+          <label><span>视角 俯仰</span>
+            <input type="range" id="vw-pitch" min="-85" max="85" value="46"></label>
           <label><span>不透明度</span>
             <input type="range" id="vw-gain" min="15" max="200" value="100"></label>
           <label><span>阈值 <i id="vw-thresh-label">0.50</i></span>
@@ -198,8 +203,12 @@
           <div class="sw-unit" id="sw-unit"></div>
         </div>
         <div class="sw-ctl">
-          <label><span>位置 <i id="sw-offset">0.00 格</i></span>
-            <input type="range" id="sw-pos" min="-100" max="100" value="0"></label>
+          <label><span>中心 X <i id="sw-cx-label">0.00</i></span>
+            <input type="range" id="sw-cx" min="-150" max="150" value="0"></label>
+          <label><span>中心 Y <i id="sw-cy-label">0.00</i></span>
+            <input type="range" id="sw-cy" min="-100" max="100" value="0"></label>
+          <label><span>中心 Z <i id="sw-cz-label">0.00</i></span>
+            <input type="range" id="sw-cz" min="-150" max="150" value="0"></label>
           <label><span>偏航</span><input type="range" id="sw-yaw" min="0" max="360" value="0"></label>
           <label><span>俯仰</span><input type="range" id="sw-pitch" min="-90" max="90" value="90"></label>
           <label><span>尺寸 <i id="sw-size-label">3.40 格</i></span>
