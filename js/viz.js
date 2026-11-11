@@ -1051,10 +1051,22 @@ function trace(fn, seed, box, h, maxSteps, sign, stopSolver = null, stopR = 0) {
     if (!inside([x, y, z])) break;
     // 场线终结在导体表面
     if (stopSolver && step % 2 === 0 && nearestConductorRatio(stopSolver, x * W2M, y * W2M, z * W2M) < 1.2) break;
-    // 闭合的场线（磁场常见）回到起点附近就停，避免绕圈刷点
-    if (step > 24) {
-      const d2 = (x - seed[0]) ** 2 + (y - seed[1]) ** 2 + (z - seed[2]) ** 2;
-      if (d2 < 0.02) break;
+    // 闭合/回环就停：磁场线是闭合环，追踪多半会绕一圈甚至几圈，
+    // 绕多了就变成「同一条线画了好几遍」，看起来像重叠。
+    // 判据：回到起点附近，或者贴近自己较早的那段路径。
+    if (step > 12) {
+      const near = Math.max(0.02, (h * 2.2) * (h * 2.2));
+      const d2s = (x - seed[0]) ** 2 + (y - seed[1]) ** 2 + (z - seed[2]) ** 2;
+      if (d2s < near) break;
+      // 自我贴近检测（只看前 3/4 的路径，避免和刚走过的点比较）
+      const lim = Math.max(0, pts.length - 8);
+      let closed = false;
+      for (let i = 0; i < lim; i += 2) {
+        const q = pts[i];
+        const dx = q[0] - x, dy = q[1] - y, dz = q[2] - z;
+        if (dx * dx + dy * dy + dz * dz < near) { closed = true; break; }
+      }
+      if (closed) break;
     }
   }
   return pts;

@@ -1,7 +1,8 @@
 /**
  * app.js —— 把电路编辑器、求解器、三维场景和可视化面板接在一起
  */
-import { createDefaultCircuit, createSimpleLoop, solveCircuit, buildScene, TYPES, newId } from './circuit.js';
+import { createDefaultCircuit, createSimpleLoop, solveCircuit, buildScene, TYPES, newId,
+         createTransient, solveTransient } from './circuit.js';
 import { METER_PER_UNIT } from './field.js';
 import { Editor2D } from './editor2d.js';
 import { Scene3D } from './scene.js';
@@ -38,6 +39,7 @@ const state = {
   interior: false,     // 是否画导体内部的场
   insideMap: false,    // 内部箭头是否用外侧同款色标
   arrowScale: 1,       // 箭头大小全局系数
+  timeOn: false,       // 时域模式
   boxLock: { x: false, y: false, z: false },   // 锁定后拖动截取框不会改这一轴
   sliceLock: { x: false, y: false, z: false }, // 截面中心的锁
   autoRotate: false,
@@ -99,7 +101,7 @@ function rebuild() {
   rebuilding = true;
   const t0 = performance.now();
   try {
-    solution = solveCircuit(circuit);
+    solution = (state.timeOn && tSol) ? tSol : solveCircuit(circuit);
     const t1 = performance.now();
     sceneData = buildScene(circuit, solution, { wireRadius: state.wireRadius });
     const t2 = performance.now();
@@ -558,6 +560,31 @@ $('btn-snap').addEventListener('click', () => {
   editor.snap = on;
 });
 
+$('btn-time').addEventListener('click', () => {
+  state.timeOn = !state.timeOn;
+  $('btn-time').classList.toggle('active', state.timeOn);
+  $('timewin').classList.toggle('hidden', !state.timeOn);
+  if (state.timeOn) {
+    tReset();
+    $('hint').textContent = '时域：从 t=0（全部静止）开始积分，拖动时间轴或按播放查看瞬态';
+  } else {
+    tPause();
+    tSol = null;
+    lastCount = -1;
+    rebuild();
+    $('hint').textContent = '';
+  }
+});
+
+$('tm-play')?.addEventListener('click', () => {
+  if (tTimer) tPause(); else tPlay();
+});
+$('tm-reset')?.addEventListener('click', () => tReset());
+$('tm-slider')?.addEventListener('input', (e) => {
+  tPause();
+  tGoto(+e.target.value);
+});
+
 $('btn-view').addEventListener('click', () => {
   if (sceneData && sceneData.bounds) scene3d.frameTo(sceneData.bounds);
 });
@@ -622,6 +649,59 @@ window.addEventListener('keydown', (e) => {
   }
 });
 
+/* ---------------- 时域分析 ---------------- */
+const T_DT = 20e-6;        // 步长 20 µs
+const T_MAX = 400;         // 时间轴 400 步 = 8 ms
+let tState = null;
+let tSol = null;
+let tIndex = 0;
+let tTimer = null;
+
+function tSyncUI() {
+  if ($('tm-label')) $('tm-label').textContent = `t = ${(tIndex * T_DT * 1000).toFixed(2)} ms`;
+  if ($('tm-slider')) $('tm-slider').value = String(tIndex);
+}
+
+/** 从 0 重新积分到第 k 步（每步只是一个很小的线性方程组，很快） */
+function tGoto(k) {
+  tIndex = Math.max(0, Math.min(T_MAX, k | 0));
+  tState = createTransient(circuit);
+  tSol = solveTransient(circuit, tState, T_DT);
+  for (let i = 0; i < tIndex; i++) tSol = solveTransient(circuit, tState, T_DT);
+  lastCount = circuit.elements.length;
+  rebuild();
+  tSyncUI();
+}
+
+function tStep() {
+  if (tIndex >= T_MAX) { tPause(); return; }
+  tSol = solveTransient(circuit, tState, T_DT);
+  tIndex++;
+  rebuild();
+  tSyncUI();
+}
+
+function tPlay() {
+  if (tTimer || !state.timeOn) return;
+  if (tIndex >= T_MAX) tGoto(0);
+  $('tm-play').textContent = '暂停';
+  tTimer = setInterval(() => {
+    if (tIndex >= T_MAX) { tPause(); return; }
+    tStep();
+  }, 110);
+}
+
+function tPause() {
+  if (tTimer) { clearInterval(tTimer); tTimer = null; }
+  if ($('tm-play')) $('tm-play').textContent = '播放';
+}
+
+function tReset() {
+  tPause();
+  lastCount = circuit.elements.length;
+  tGoto(0);
+}
+
 /* ---------------- 启动 ---------------- */
 // 支持 ?field=E&mode=arrows&density=60&editor=0 之类的分享链接
 const qs = new URLSearchParams(location.search);
@@ -657,6 +737,7 @@ const qs = new URLSearchParams(location.search);
   if (qs.get('dbg') === '1') state.debugStats = true;
   if (qs.get('arrow')) state.arrowScale = Math.max(0.3, Math.min(2.5, +qs.get('arrow') / 100));
   if (qs.get('insidemap') === '1') state.insideMap = true;
+  if (qs.get('time') === '1') state.timeOn = true;
   if (qs.get('circuit') === 'simple') circuit.elements = createSimpleLoop().elements;
   if (qs.get('inside') === '1') state.interior = true;
   if (qs.get('wire')) state.wireRadius = Math.min(0.14, Math.max(0.01, +qs.get('wire') / 100));
@@ -689,6 +770,12 @@ scene3d.setGhost(state.interior);
 slicePane.scene.setGhost(state.interior);
 rebuild();
 if (sliceMode3D) slice.setMode3D(true);
+
+if (state.timeOn) {
+  $('btn-time').classList.add('active');
+  $('timewin').classList.remove('hidden');
+  tGoto(qs.has('t') ? +qs.get('t') : 0);
+}
 if (state.analysisOn) {
   $('btn-analysis').classList.add('active');
   $('analysis').classList.remove('hidden');

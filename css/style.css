@@ -501,6 +501,31 @@ input[type=range]::-webkit-slider-thumb {
 }
 .locked-wrap input[type="range"]:disabled { opacity: 0.35; }
 
+.timewin {
+  left: 50%;
+  bottom: 92px;
+  transform: translateX(-50%);
+  width: 360px;
+  padding: 8px 12px 10px;
+  border-radius: 10px;
+  background: rgba(12, 18, 26, 0.88);
+  border: 1px solid rgba(126, 224, 255, 0.18);
+  backdrop-filter: blur(6px);
+}
+.timewin .tm-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+.timewin .tm-label {
+  margin-left: auto;
+  font-size: 11.5px;
+  color: #9fc6ea;
+  font-variant-numeric: tabular-nums;
+}
+.timewin input[type="range"] { width: 100%; }
+
 .sw-tip {
   margin: 4px 0 2px;
   font-size: 11px;

@@ -43,6 +43,7 @@
       <button id="btn-analysis" class="ghost" title="看清导线内部的能量流向">剖面</button>
       <button id="btn-snap" class="ghost tiny active" title="关闭后可以放在 1/4 格的位置">吸附网格</button>
       <button id="btn-view" class="ghost" title="把相机重新对准电路（增删元件时视角不会自动跳）">复位视角</button>
+      <button id="btn-time" class="ghost" title="时域分析：后向欧拉积分，拖动时间轴看瞬态">时域</button>
       <button id="btn-rotate" class="ghost" title="让相机缓慢旋转">环绕</button>
       <button id="btn-edit" class="ghost" title="显示 / 隐藏电路编辑器">编辑器</button>
       <button id="btn-help" class="ghost">说明</button>
@@ -155,6 +156,14 @@
         </label>
       </div>
 
+      <div class="overlay timewin hidden" id="timewin">
+        <div class="tm-row">
+          <button id="tm-play" class="ghost tiny">播放</button>
+          <button id="tm-reset" class="ghost tiny">重置</button>
+          <span id="tm-label" class="tm-label">t = 0.00 ms</span>
+        </div>
+        <input type="range" id="tm-slider" min="0" max="400" value="0" />
+      </div>
       <div class="overlay legend-hint" id="hint"></div>
       <div class="version" id="version">v—</div>
 

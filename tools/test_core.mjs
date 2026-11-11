@@ -3,7 +3,8 @@
  *   node tools/test_core.mjs
  * 检查：MNA 工作点是否合理、场的量级、以及坡印廷矢量的方向（能量从电池流向电阻）。
  */
-import { createDefaultCircuit, solveCircuit, buildScene, worldOf, key } from '../js/circuit.js';
+import { createDefaultCircuit, solveCircuit, buildScene, worldOf, key,
+         createTransient, solveTransient } from '../js/circuit.js';
 import { MU0, KE } from '../js/field.js';
 
 let fails = 0;
@@ -238,6 +239,28 @@ console.log('== 真断路：没有电流就没有能流 ==');
   console.log(`  断路时最大电流 ${maxI.toExponential(1)} A，最大 |S| ${maxS.toExponential(1)} W/m²`);
   ok(maxI < 1e-9, '真断路没有电流');
   ok(maxS < 1e-9, '没有电流时 S = 0');
+}
+
+console.log('== 时域：后向欧拉收敛到直流解 ==');
+{
+  const st = createTransient(c);
+  const dt = 20e-6;
+  const L = c.elements.find((e) => e.type === 'inductor');
+  const C = c.elements.find((e) => e.type === 'capacitor');
+  const I0 = solveCircuit(c).elCurrent[L.id];
+  let solT = null;
+  const trace = [];
+  for (let i = 0; i < 500; i++) {          // 500 步 = 10 ms
+    solT = solveTransient(c, st, dt);
+    if (i === 0 || i === 4 || i === 49 || i === 499) {
+      trace.push(`${(st.t * 1000).toFixed(2)}ms I_L=${(solT.elCurrent[L.id] * 1000).toFixed(1)}mA`);
+    }
+  }
+  console.log('  ' + trace.join('  |  '));
+  const iEnd = solT.elCurrent[L.id];
+  ok(close(iEnd, I0, 0.01), '10 ms 后 I_L 收敛到直流解',
+    `${(iEnd * 1000).toFixed(2)} vs ${(I0 * 1000).toFixed(2)} mA`);
+  ok(Math.abs(iEnd - I0) < Math.abs(I0) * 0.01, '误差 < 1%');
 }
 
 console.log(fails === 0 ? '\n全部通过 ✅' : `\n${fails} 项失败 ❌`);

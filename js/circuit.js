@@ -149,6 +149,128 @@ export function conductanceOf(el) {
  * @returns {{ nodeV: Object, elCurrent: Object, nodeList: string[] }}
  *   elCurrent[i] 为元件 id → 电流，方向 a→b 为正
  */
+/* ------------------------------------------------------------------ *
+ *  时域（瞬态）求解：后向欧拉 + 伴随模型
+ *    电容：I = C/dt·(V − V_prev)   → 电导 G = C/dt，等效电流源 G·V_prev
+ *    电感：I = dt/L·(V) + I_prev   → 电导 G = dt/L，等效电流源 I_prev
+ *    R / 导线 / 闭合开关：照旧
+ *  返回和 solveCircuit 同样结构的解，另外把状态推进一拍。
+ * ------------------------------------------------------------------ */
+
+/** 零初始状态（t=0⁻ 全部静止） */
+export function createTransient(circuit) {
+  const vC = new Map(), iL = new Map();
+  for (const el of circuit.elements) {
+    if (el.type === 'capacitor') vC.set(el.id, 0);
+    if (el.type === 'inductor') iL.set(el.id, 0);
+  }
+  return { vC, iL, t: 0 };
+}
+
+/** 从直流稳态初始化（t=∞ 当作起点） */
+export function transientFromDC(circuit, st) {
+  const sol = solveCircuit(circuit);
+  for (const el of circuit.elements) {
+    const Va = sol.nodeV[key(el.a)] ?? 0;
+    const Vb = sol.nodeV[key(el.b)] ?? 0;
+    if (el.type === 'capacitor') st.vC.set(el.id, Va - Vb);
+    if (el.type === 'inductor') st.iL.set(el.id, sol.elCurrent[el.id] ?? 0);
+  }
+  return st;
+}
+
+export function solveTransient(circuit, st, dt) {
+  const nodeSet = new Set();
+  for (const el of circuit.elements) { nodeSet.add(key(el.a)); nodeSet.add(key(el.b)); }
+  const nodeList = [...nodeSet];
+  const idx = new Map(nodeList.map((k, i) => [k, i]));
+  const N = nodeList.length;
+
+  const ground = nodeList.reduce((best, k) => {
+    const [i, j] = k.split(',').map(Number);
+    const [bi, bj] = best.split(',').map(Number);
+    return (j < bj || (j === bj && i < bi)) ? k : best;
+  }, nodeList[0] || '0,0');
+  const g = idx.get(ground);
+
+  const sources = circuit.elements.filter((e) => e.type === 'battery');
+  const M = sources.length;
+  const size = N + M;
+  const A = new Float64Array(size * size);
+  const b = new Float64Array(size);
+  const srcIndex = new Map(sources.map((s, k) => [s.id, N + k]));
+
+  // 伴随电导 + 等效电流源
+  for (const el of circuit.elements) {
+    if (el.type === 'battery') continue;
+    const i1 = idx.get(key(el.a));
+    const i2 = idx.get(key(el.b));
+    if (i1 === i2) continue;
+    let G, Ieq = 0;
+    if (el.type === 'capacitor') {
+      const C = Math.max(el.value, 1e-9) * 1e-6;   // µF → F
+      G = C / dt;
+      Ieq = G * (st.vC.get(el.id) ?? 0);           // I = G·V − Ieq
+    } else if (el.type === 'inductor') {
+      const L = Math.max(el.value, 1e-6) * 1e-3;   // mH → H
+      G = dt / L;
+      Ieq = -(st.iL.get(el.id) ?? 0);              // I = G·V − Ieq = G·V + I_prev
+    } else {
+      G = conductanceOf(el);
+    }
+    A[i1 * size + i1] += G; A[i2 * size + i2] += G;
+    A[i1 * size + i2] -= G; A[i2 * size + i1] -= G;
+    // ΣI = G(Va−Vb) − Ieq = 0  →  b[a] += Ieq, b[b] -= Ieq
+    b[i1] += Ieq;
+    b[i2] -= Ieq;
+  }
+
+  for (const s of sources) {
+    const i1 = idx.get(key(s.a)), i2 = idx.get(key(s.b));
+    const k = srcIndex.get(s.id);
+    A[i1 * size + k] += 1;
+    A[i2 * size + k] -= 1;
+    A[k * size + i1] -= 1;
+    A[k * size + i2] += 1;
+    b[k] = s.value;
+  }
+
+  for (let c = 0; c < size; c++) A[g * size + c] = 0;
+  A[g * size + g] = 1;
+  b[g] = 0;
+
+  const x = solveLinear(A, b, size);
+
+  const nodeV = {};
+  nodeList.forEach((k, i) => { nodeV[k] = x[i]; });
+  const elCurrent = {};
+  for (const el of circuit.elements) {
+    const i1 = idx.get(key(el.a)), i2 = idx.get(key(el.b));
+    const V = i1 === i2 ? 0 : x[i1] - x[i2];
+    if (el.type === 'battery') {
+      elCurrent[el.id] = x[srcIndex.get(el.id)];
+    } else if (el.type === 'capacitor') {
+      const C = Math.max(el.value, 1e-9) * 1e-6;
+      elCurrent[el.id] = (C / dt) * (V - (st.vC.get(el.id) ?? 0));
+    } else if (el.type === 'inductor') {
+      const L = Math.max(el.value, 1e-6) * 1e-3;
+      elCurrent[el.id] = (dt / L) * V + (st.iL.get(el.id) ?? 0);
+    } else {
+      elCurrent[el.id] = conductanceOf(el) * V;
+    }
+  }
+
+  // 推进状态
+  for (const el of circuit.elements) {
+    const Va = nodeV[key(el.a)] ?? 0, Vb = nodeV[key(el.b)] ?? 0;
+    if (el.type === 'capacitor') st.vC.set(el.id, Va - Vb);
+    if (el.type === 'inductor') st.iL.set(el.id, elCurrent[el.id] ?? 0);
+  }
+  st.t += dt;
+
+  return { nodeV, elCurrent, nodeList, ground };
+}
+
 export function solveCircuit(circuit) {
   const nodeSet = new Set();
   for (const el of circuit.elements) { nodeSet.add(key(el.a)); nodeSet.add(key(el.b)); }
