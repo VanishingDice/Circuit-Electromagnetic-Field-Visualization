@@ -370,11 +370,57 @@ export class FieldViz {
         !(box.max[2] - box.min[2] > 1e-6)) { this.zero = true; return; }
     const fn = makeFieldFn(field, solver);
     const density = o.density ?? 0.5;
-    const nLines = Math.round((field === 'E' ? 14 : 10) + density * (field === 'E' ? 100 : 68));
-    let seeds = this.makeSeeds(solver, box, nLines, field);
+    // 线数要跟着采样范围走：小盒子里还画 40 条会挤成一团
+    const span0 = Math.min(
+      box.max[0] - box.min[0], box.max[1] - box.min[1], box.max[2] - box.min[2]
+    );
+    const sizeK = Math.max(0.18, Math.min(1, span0 / 4));
+    const nLines = Math.round(
+      ((field === 'E' ? 14 : 10) + density * (field === 'E' ? 100 : 68)) * sizeK
+    );
+
+    // ---- 等间距撒线（Jobard–Lefer 的思路）----
+    // 候选放宽到目标的 5 倍，逐条接受；一条线只有在「离已有线足够远」时才保留。
+    // 这样线的疏密由间距 d 决定，而不是由随机撒点碰运气决定。
+    const spanMin = Math.min(
+      box.max[0] - box.min[0], box.max[1] - box.min[1], box.max[2] - box.min[2]
+    );
+    const sep0 = Math.max(0.008, spanMin / (16 + density * 54));
+    let candidates = this.makeSeeds(solver, box, Math.round(nLines * 8), field, sep0);
     if (o.interior && field !== 'phi') {
-      seeds = seeds.concat(this.makeInteriorSeeds(solver, box, Math.round(nLines * 0.35)));
+      candidates = candidates.concat(this.makeInteriorSeeds(solver, box, Math.round(nLines * 0.35)));
     }
+
+    const sep = sep0;
+    // 空间哈希：把已接受的线按 sep 大小的格子存起来，查询 O(1)
+    const cellSize = sep;
+    const buckets = new Map();
+    const keyOf = (x, y, z) =>
+      `${Math.floor(x / cellSize)},${Math.floor(y / cellSize)},${Math.floor(z / cellSize)}`;
+    const addPoint = (p) => {
+      const k = keyOf(p[0], p[1], p[2]);
+      let arr = buckets.get(k);
+      if (!arr) { arr = []; buckets.set(k, arr); }
+      arr.push(p);
+    };
+    const nearOccupied = (p, radius) => {
+      const cx = Math.floor(p[0] / cellSize), cy = Math.floor(p[1] / cellSize), cz = Math.floor(p[2] / cellSize);
+      const r2 = radius * radius;
+      for (let i = -1; i <= 1; i++) {
+        for (let j = -1; j <= 1; j++) {
+          for (let k = -1; k <= 1; k++) {
+            const arr = buckets.get(`${cx + i},${cy + j},${cz + k}`);
+            if (!arr) continue;
+            for (let n = 0; n < arr.length; n++) {
+              const q = arr[n];
+              const dx = q[0] - p[0], dy = q[1] - p[1], dz = q[2] - p[2];
+              if (dx * dx + dy * dy + dz * dz < r2) return true;
+            }
+          }
+        }
+      }
+      return false;
+    };
 
     const positions = [];
     const colors = [];
@@ -382,16 +428,33 @@ export class FieldViz {
     const allPts = [];
     const marks = [];
     const tmp = [0, 0, 0];
+    const accepted = [];
 
-    for (const sd of seeds) {
+    for (const sd of candidates) {
+      if (accepted.length >= nLines) break;
       const inside = !!(sd && sd.inside);
       const seed = inside ? sd.p : sd;
+
+      // 先看种子点：太挤就直接跳过（便宜，能挡掉大部分候选）
+      if (!inside && nearOccupied(seed, sep * 0.85)) continue;
+
       // 导体外面的场线不穿进导体；导体内部的场线本来就在里面，所以不设终止条件，
       // 步长也要按导体尺度缩小（导线只有 0.5mm，用 0.075 格的步长直接跨出去了）
+      // 步数上限压下来：原来一条线能跨 20 多格，横穿整个场景显乱
       const line = inside
-        ? integrate(fn, seed, box, (sd.h || 0.004), 900, null)
-        : integrate(fn, seed, box, 0.075, field === 'E' ? 420 : 320, solver);
-      if (line.length < 3) continue;
+        ? integrate(fn, seed, box, (sd.h || 0.004), 600, null)
+        : integrate(fn, seed, box, 0.075, field === 'E' ? 260 : 190, solver);
+      if (line.length < 8) continue;
+
+      // 再看整条线：如果大半程都贴着已有线，就丢掉（只靠种子点判不够）
+      if (!inside) {
+        let close = 0, total = 0;
+        for (let n = 0; n < line.length; n += 4) {
+          total++;
+          if (nearOccupied(line[n], sep * 0.62)) close++;
+        }
+        if (total > 0 && close / total > 0.3) continue;
+      }
       const lineMags = [];
       for (const p of line) {
         const v = fn(p[0] * W2M, p[1] * W2M, p[2] * W2M);
@@ -399,6 +462,10 @@ export class FieldViz {
         lineMags.push(m);
         if (m > 0 && isFinite(m)) mags.push(m);
       }
+      accepted.push(seed);
+      for (let n = 0; n < line.length; n += 2) addPoint(line[n]);
+      if (line.length > 1) addPoint(line[line.length - 1]);
+
       allPts.push({ line, lineMags });
 
       // 沿线插方向标记：每条线大约 8 个，起点错开，避免所有标记排成一排
@@ -473,7 +540,7 @@ export class FieldViz {
    * 确定性撒种（不再随机）：按导体长度分摊条数，
    * 沿弧长用黄金比、绕轴用黄金角、半径用 Halton 序列 —— 分布均匀且每次重建完全一致。
    */
-  makeSeeds(solver, box, n, field) {
+  makeSeeds(solver, box, n, field, sep = 0) {
     // seedMode = 'uniform' 时在盒内均匀撒点（只用于对比实验）
     if (this.seedMode === 'uniform') {
       const seeds = [];
@@ -575,7 +642,9 @@ export class FieldViz {
       // 吸附到细导线后盒子只有一两毫米，如果沿用固定的 0.2~1 格半径，
       // 种子会全部落在盒外或者贴着导体被拒 → 只剩几条线
       const hi = Math.max(radW * 1.6, Math.min(rMax, radW * 12));
-      const lo = Math.min(hi * 0.92, radW * 1.5);
+      // 半径下限至少和「线间距」一个量级：否则细到线圈那种小半径导体，
+      // 一圈圈挤在一起，看起来就是一团乱麻
+      const lo = Math.min(hi * 0.92, Math.max(radW * 1.5, sep * 0.55));
       let r;
       if (field === 'E') {
         r = lo + (hi - lo) * halton(i, 3);
