@@ -271,8 +271,8 @@ export class FieldViz {
     const tmp = [0, 0, 0];
 
     for (const seed of seeds) {
-      const stopR = solver.conductorRadius * 1.15;
-      const line = integrate(fn, seed, box, 0.075, field === 'E' ? 420 : 320, field === 'E' ? solver : null, stopR);
+      // 任何场线都不该穿进导体：按各自半径的比例判定
+      const line = integrate(fn, seed, box, 0.075, field === 'E' ? 420 : 320, solver);
       if (line.length < 3) continue;
       const lineMags = [];
       for (const p of line) {
@@ -582,6 +582,23 @@ function nearestConductor(solver, x, y, z) {
   return best;
 }
 
+/** 距离 / 该段导体自己的半径：<1 表示在导体内部 */
+function nearestConductorRatio(solver, x, y, z) {
+  let best = Infinity;
+  const rad = solver.rad;
+  for (let k = 0; k < solver.n; k++) {
+    const x0 = solver.p0[3 * k], y0 = solver.p0[3 * k + 1], z0 = solver.p0[3 * k + 2];
+    const dx = solver.p1[3 * k] - x0, dy = solver.p1[3 * k + 1] - y0, dz = solver.p1[3 * k + 2] - z0;
+    const l2 = dx * dx + dy * dy + dz * dz;
+    let tt = l2 > 0 ? ((x - x0) * dx + (y - y0) * dy + (z - z0) * dz) / l2 : 0;
+    tt = tt < 0 ? 0 : tt > 1 ? 1 : tt;
+    const px = x - (x0 + dx * tt), py = y - (y0 + dy * tt), pz = z - (z0 + dz * tt);
+    const r = Math.sqrt(px * px + py * py + pz * pz) / (rad ? rad[k] : 0.0005);
+    if (r < best) best = r;
+  }
+  return best;
+}
+
 /** RK4 双向积分一条流线，返回世界坐标点列 */
 function integrate(fn, seed, box, h, maxSteps, stopSolver = null, stopR = 0) {
   const out = [];
@@ -618,8 +635,8 @@ function trace(fn, seed, box, h, maxSteps, sign, stopSolver = null, stopR = 0) {
     z += (h / 6) * (k1[2] + 2 * k2[2] + 2 * k3[2] + k4[2]);
     pts.push([x, y, z]);
     if (!inside([x, y, z])) break;
-    // 电场线终结在导体表面
-    if (stopSolver && step % 2 === 0 && nearestConductor(stopSolver, x * W2M, y * W2M, z * W2M) < stopR) break;
+    // 场线终结在导体表面
+    if (stopSolver && step % 2 === 0 && nearestConductorRatio(stopSolver, x * W2M, y * W2M, z * W2M) < 1.2) break;
     // 闭合的场线（磁场常见）回到起点附近就停，避免绕圈刷点
     if (step > 24) {
       const d2 = (x - seed[0]) ** 2 + (y - seed[1]) ** 2 + (z - seed[2]) ** 2;

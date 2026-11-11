@@ -86,6 +86,16 @@ console.log('== 坡印廷矢量方向（关键物理）==');
   ok(Sx > 0, '电池外侧能流向外（电池在供能）');
 }
 
+console.log('== 每段导体半径（场线不该穿进元件）==');
+{
+  const rad = solver.rad;
+  const maxR = Math.max(...rad);
+  const minR = Math.min(...rad);
+  console.log(`  半径范围 ${(minR * 1000).toFixed(2)} … ${(maxR * 1000).toFixed(2)} mm`);
+  ok(maxR > 0.0009, '电阻本体段使用了更粗的半径');
+  ok(minR >= 0.0004 && maxR <= 0.0015, '半径都在合理范围（导线 0.5 / 线圈 0.43 / 电阻壳 1.1 mm）');
+}
+
 console.log('== 导体内部的场（剖面功能的基础）==');
 {
   const cross = (a, b) => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];

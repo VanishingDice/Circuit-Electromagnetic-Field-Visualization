@@ -33,6 +33,7 @@ export class FieldSolver {
     this._pot = [];
     this._cur = [];
     this._eAx = [];
+    this._rad = [];
     this.n = 0;
   }
 
@@ -44,12 +45,13 @@ export class FieldSolver {
    * @param {number} current 分到该段的电流（方向 p0→p1 为正）
    * @param {number} eAxial 导体内部的纵向电场 E = −∂φ/∂l（V/m），方向上 p0→p1 为正
    */
-  add(p0, p1, potential, current = 0, eAxial = 0) {
+  add(p0, p1, potential, current = 0, eAxial = 0, radius = null) {
     this._p0.push(p0[0], p0[1], p0[2]);
     this._p1.push(p1[0], p1[1], p1[2]);
     this._pot.push(potential);
     this._cur.push(current);
     this._eAx.push(eAxial);
+    this._rad.push(radius == null ? this.wireRadius : radius);
   }
 
   /** 把收集到的线段整理成定长数组 */
@@ -61,6 +63,8 @@ export class FieldSolver {
     this.vpot = Float64Array.from(this._pot);
     this.cur = Float64Array.from(this._cur);
     this.eAx = Float64Array.from(this._eAx);
+    // 每段导体的绘制半径（导线、电阻外壳、线圈各不相同）——内部场和「场线是否进入导体」都用它
+    this.rad = Float64Array.from(this._rad);
     this.len = new Float64Array(n);
     this.mid = new Float64Array(n * 3);
     for (let i = 0; i < n; i++) {
@@ -214,11 +218,11 @@ export class FieldSolver {
     if (box && (px < box[0] || px > box[3] || py < box[1] || py > box[4] || pz < box[2] || pz > box[5])) {
       return false;
     }
-    const a = this.conductorRadius;
-    const { p0, p1, len, cur, eAx, n } = this;
+    const { p0, p1, len, cur, eAx, n, rad } = this;
     for (let i = 0; i < n; i++) {
       const L = len[i];
       if (L < 1e-12) continue;
+      const a = rad[i];
       const i3 = 3 * i;
       const ux = (p1[i3] - p0[i3]) / L, uy = (p1[i3 + 1] - p0[i3 + 1]) / L, uz = (p1[i3 + 2] - p0[i3 + 2]) / L;
       const wx = px - p0[i3], wy = py - p0[i3 + 1], wz = pz - p0[i3 + 2];

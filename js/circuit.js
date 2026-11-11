@@ -257,9 +257,9 @@ export function buildScene(circuit, solution, opts = {}) {
   const segs = [];
   const M = METER_PER_UNIT;
 
-  const pushSeg = (p0, p1, pot, cur, eAx = 0) => {
+  const pushSeg = (p0, p1, pot, cur, eAx = 0, radius = null) => {
     const a = V3.mul(p0, M), c = V3.mul(p1, M);
-    segs.push({ p0: a, p1: c, pot, cur, eAx });
+    segs.push({ p0: a, p1: c, pot, cur, eAx, radius });
   };
 
   for (const el of circuit.elements) {
@@ -286,7 +286,11 @@ export function buildScene(circuit, solution, opts = {}) {
           const vA = pot0 + (pot1 - pot0) * tA;
           const vB = pot0 + (pot1 - pot0) * tB;
           const Lm = V3.len(V3.sub(q1, q0)) * M;
-          pushSeg(q0, q1, vA, opts.current ?? I, Lm > 1e-12 ? (vA - vB) / Lm : 0);
+          const tMid = (tA + tB) / 2;
+          const rr = typeof opts.radius === 'function'
+            ? opts.radius(tMid)
+            : (opts.radius ?? wireRadius);
+          pushSeg(q0, q1, vA, opts.current ?? I, Lm > 1e-12 ? (vA - vB) / Lm : 0, rr * M);
         }
       }
     };
@@ -298,7 +302,9 @@ export function buildScene(circuit, solution, opts = {}) {
         break;
       }
       case 'resistor': {
-        addPath([A, B], Va, Vb);
+        // 本体画成半径 0.11 的壳，所以中间那段的「导体半径」也要跟着变，
+        // 否则场线会从壳里穿过去
+        addPath([A, B], Va, Vb, { radius: (t) => (t > 0.2 && t < 0.8 ? 0.11 : wireRadius) });
         const bodyA = V3.add(A, V3.mul(axis, L * 0.22));
         const bodyB = V3.add(A, V3.mul(axis, L * 0.78));
         parts.push({ kind: 'tube', pts: [A, bodyA], radius: wireRadius, mat: 'copper' });
@@ -365,7 +371,7 @@ export function buildScene(circuit, solution, opts = {}) {
           ));
         }
         pts.push(B);
-        addPath(pts, Va, Vb);
+        addPath(pts, Va, Vb, { radius: wireRadius * 0.85 });
         parts.push({ kind: 'tube', pts, radius: wireRadius * 0.85, mat: 'coil' });
         parts.push({ kind: 'label', pos: V3.add(V3.add(A, V3.mul(axis, L * 0.5)), V3.mul(up, 0.45)), text: `${fmt(el.value)}mH` });
         break;
@@ -381,7 +387,7 @@ export function buildScene(circuit, solution, opts = {}) {
 
   // 场求解器
   const solver = new FieldSolver(physicsRadius * M, wireRadius * M);
-  for (const s of segs) solver.add(s.p0, s.p1, s.pot, s.cur, s.eAx);
+  for (const s of segs) solver.add(s.p0, s.p1, s.pot, s.cur, s.eAx, s.radius);
   solver.build().solve();
 
   // 场景包络，供相机取景（注意：segments 是米制，这里换回世界单位）
