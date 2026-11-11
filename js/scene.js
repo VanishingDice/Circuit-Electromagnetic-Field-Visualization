@@ -147,6 +147,22 @@ export class Scene3D {
   }
 
   /** 设置/清除裁剪平面（世界坐标） */
+  /** 导体半透明：让导体内部的场露出来 */
+  setGhost(on) {
+    if (!this.circuitGroup) return;
+    this.circuitGroup.traverse((obj) => {
+      if (!obj.userData || !obj.userData.conductor) return;
+      const mats = Array.isArray(obj.material) ? obj.material : [obj.material];
+      for (const m of mats) {
+        if (!m) continue;
+        m.transparent = !!on;
+        m.opacity = on ? 0.28 : 1;
+        m.depthWrite = !on;
+        m.needsUpdate = true;
+      }
+    });
+  }
+
   setClipPlanes(planes) {
     this.clipPlanes = planes && planes.length ? planes : null;
     this.applyClipTo(this.scene);
@@ -240,6 +256,7 @@ export class Scene3D {
           mat = getMat(p.mat, { color: base, metalness: 0.65, roughness: 0.4 });
         }
         const mesh = new THREE.Mesh(geo, mat);
+        mesh.userData.conductor = true;   // 打开「显示导体内部」时对这些做半透明
         this.circuitGroup.add(mesh);
       } else if (p.kind === 'box' || p.kind === 'plate') {
         const size = p.kind === 'plate' ? [0.035, p.half * 2, p.half * 2] : p.size;
@@ -256,6 +273,7 @@ export class Scene3D {
         const m = new THREE.Matrix4().makeBasis(ax, uy, sz);
         mesh.quaternion.setFromRotationMatrix(m);
         mesh.position.set(...p.center);
+        mesh.userData.conductor = true;
         this.circuitGroup.add(mesh);
       } else if (p.kind === 'node') {
         const c = potentialToRGB(p.pot || 0, minV, maxV);

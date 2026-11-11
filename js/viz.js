@@ -259,6 +259,101 @@ export class FieldViz {
     this.group.add(mesh);
     this.arrows = mesh;
     this.lastStats = { count: keep.length, norm, mags };
+
+    // 导体内部的场：E 沿导线、B 绕轴、S 指向轴心
+    if (o.interior && field !== 'phi') this.buildInteriorArrows(o, field);
+  }
+
+  /* ---- 导体内部的箭头（尺度跟着导体半径走） ---- */
+  buildInteriorArrows(o, field) {
+    const solver = o.solver;
+    const E = [0, 0, 0], B = [0, 0, 0], S = [0, 0, 0];
+    const items = [];
+
+    for (let k = 0; k < solver.n; k++) {
+      const a = solver.rad ? solver.rad[k] : solver.conductorRadius;
+      const L = solver.len[k];
+      if (!(a > 0) || !(L > 1e-9)) continue;
+      const i3 = 3 * k;
+      const p0 = [solver.p0[i3], solver.p0[i3 + 1], solver.p0[i3 + 2]];
+      const p1 = [solver.p1[i3], solver.p1[i3 + 1], solver.p1[i3 + 2]];
+      const u = [(p1[0] - p0[0]) / L, (p1[1] - p0[1]) / L, (p1[2] - p0[2]) / L];
+      const ref = Math.abs(u[1]) < 0.9 ? [0, 1, 0] : [1, 0, 0];
+      let e1 = [
+        u[1] * ref[2] - u[2] * ref[1],
+        u[2] * ref[0] - u[0] * ref[2],
+        u[0] * ref[1] - u[1] * ref[0],
+      ];
+      const l1 = Math.hypot(e1[0], e1[1], e1[2]) || 1;
+      e1 = [e1[0] / l1, e1[1] / l1, e1[2] / l1];
+      const e2 = [
+        u[1] * e1[2] - u[2] * e1[1],
+        u[2] * e1[0] - u[0] * e1[2],
+        u[0] * e1[1] - u[1] * e1[0],
+      ];
+
+      // 沿轴取几个位置，每个位置在 4 个方位上放箭头（都在导体里）
+      const nAlong = Math.max(1, Math.min(3, Math.round(L / (a * 4))));
+      for (let q = 0; q < nAlong; q++) {
+        const t = (q + 0.5) / nAlong;
+        const bx = p0[0] + (p1[0] - p0[0]) * t;
+        const by = p0[1] + (p1[1] - p0[1]) * t;
+        const bz = p0[2] + (p1[2] - p0[2]) * t;
+        for (let az = 0; az < 4; az++) {
+          const th = (az / 4) * Math.PI * 2 + k * 0.7;
+          const r = a * 0.55;
+          const px = bx + e1[0] * Math.cos(th) * r + e2[0] * Math.sin(th) * r;
+          const py = by + e1[1] * Math.cos(th) * r + e2[1] * Math.sin(th) * r;
+          const pz = bz + e1[2] * Math.cos(th) * r + e2[2] * Math.sin(th) * r;
+          solver.eField(px, py, pz, E);
+          solver.bField(px, py, pz, B);
+          S[0] = (E[1] * B[2] - E[2] * B[1]) / 1.256637061e-6;
+          S[1] = (E[2] * B[0] - E[0] * B[2]) / 1.256637061e-6;
+          S[2] = (E[0] * B[1] - E[1] * B[0]) / 1.256637061e-6;
+          const v = field === 'E' ? E : field === 'B' ? B : S;
+          const m = Math.hypot(v[0], v[1], v[2]);
+          if (!(m > 0) || !isFinite(m)) continue;
+          items.push({
+            p: [px * 100, py * 100, pz * 100],
+            d: [v[0] / m, v[1] / m, v[2] / m],
+            m,
+            len: a * 100 * 1.25,
+          });
+        }
+      }
+      if (items.length > 2000) break;
+    }
+    if (!items.length) return;
+
+    const mags = items.map((it) => it.m).sort((x, y) => x - y);
+    const l0 = Math.log10(Math.max(mags[0], 1e-30));
+    const l1 = Math.log10(Math.max(mags[mags.length - 1], 1e-29));
+    const span = Math.max(l1 - l0, 1e-6);
+
+    const geo = makeArrowGeometry();
+    const mat = new THREE.MeshBasicMaterial({
+      color: 0xffb347, transparent: true, opacity: 0.95, depthWrite: false,
+    });
+    const mesh = new THREE.InstancedMesh(geo, mat, items.length);
+    const dummy = new THREE.Object3D();
+    const up = new THREE.Vector3(0, 1, 0);
+    const qq = new THREE.Quaternion();
+    const dir = new THREE.Vector3();
+    for (let n = 0; n < items.length; n++) {
+      const it = items[n];
+      const t = Math.min(1, Math.max(0, (Math.log10(Math.max(it.m, 1e-30)) - l0) / span));
+      dir.set(it.d[0], it.d[1], it.d[2]);
+      qq.setFromUnitVectors(up, dir);
+      dummy.position.set(it.p[0], it.p[1], it.p[2]);
+      dummy.quaternion.copy(qq);
+      dummy.scale.setScalar(it.len * (0.75 + 0.5 * t));
+      dummy.updateMatrix();
+      mesh.setMatrixAt(n, dummy.matrix);
+    }
+    mesh.instanceMatrix.needsUpdate = true;
+    this.scene3d.applyClipTo(mesh);
+    this.group.add(mesh);
+    this.interiorArrows = mesh;
   }
 
   /* ---- 流线 ---- */
@@ -267,7 +362,10 @@ export class FieldViz {
     const fn = makeFieldFn(field, solver);
     const density = o.density ?? 0.5;
     const nLines = Math.round((field === 'E' ? 14 : 10) + density * (field === 'E' ? 100 : 68));
-    const seeds = this.makeSeeds(solver, box, nLines, field);
+    let seeds = this.makeSeeds(solver, box, nLines, field);
+    if (o.interior && field !== 'phi') {
+      seeds = seeds.concat(this.makeInteriorSeeds(solver, box, Math.round(nLines * 0.35)));
+    }
 
     const positions = [];
     const colors = [];
@@ -276,9 +374,14 @@ export class FieldViz {
     const marks = [];
     const tmp = [0, 0, 0];
 
-    for (const seed of seeds) {
-      // 任何场线都不该穿进导体：按各自半径的比例判定
-      const line = integrate(fn, seed, box, 0.075, field === 'E' ? 420 : 320, solver);
+    for (const sd of seeds) {
+      const inside = !!(sd && sd.inside);
+      const seed = inside ? sd.p : sd;
+      // 导体外面的场线不穿进导体；导体内部的场线本来就在里面，所以不设终止条件，
+      // 步长也要按导体尺度缩小（导线只有 0.5mm，用 0.075 格的步长直接跨出去了）
+      const line = inside
+        ? integrate(fn, seed, box, (sd.h || 0.004), 900, null)
+        : integrate(fn, seed, box, 0.075, field === 'E' ? 420 : 320, solver);
       if (line.length < 3) continue;
       const lineMags = [];
       for (const p of line) {
@@ -386,11 +489,31 @@ export class FieldViz {
     const GOLDEN_ANGLE = 2.399963229728653;
 
     // 磁场只在载流导体附近有意义；电场则所有带电导体都算
+    // 小盒子里大部分导体在盒子外面，从它们身上撒出的种子会被盒子边界全部拒掉，
+    // 所以先把候选限制在「盒子附近」的导体上
+    const pad = Math.max(0.05, Math.min(
+      box.max[0] - box.min[0],
+      box.max[1] - box.min[1],
+      box.max[2] - box.min[2]
+    ) * 0.6);
+    const nearBox = (k) => {
+      const i3 = 3 * k;
+      for (let e = 0; e < 2; e++) {
+        const x = (e ? solver.p1[i3] : solver.p0[i3]) * M2W;
+        const y = (e ? solver.p1[i3 + 1] : solver.p0[i3 + 1]) * M2W;
+        const z = (e ? solver.p1[i3 + 2] : solver.p0[i3 + 2]) * M2W;
+        if (x > box.min[0] - pad && x < box.max[0] + pad &&
+            y > box.min[1] - pad && y < box.max[1] + pad &&
+            z > box.min[2] - pad && z < box.max[2] + pad) return true;
+      }
+      return false;
+    };
     const cand = [];
     const cum = [];
     let total = 0;
     for (let k = 0; k < solver.n; k++) {
       if (field === 'E' || field === 'phi' || Math.abs(solver.cur[k]) > 1e-9) {
+        if (!nearBox(k)) continue;
         cand.push(k);
         total += solver.len[k];
         cum.push(total);
@@ -412,9 +535,8 @@ export class FieldViz {
       box.max[1] - box.min[1],
       box.max[2] - box.min[2]
     );
-    const rMax = Math.max(0.008, Math.min(1.05, spanMin * 0.35));
-    const rMin = Math.max(rMax * 0.12, 0.004);
-    const radii = [0.32, 0.58, 0.8, 1.0].map((f) => rMin + (rMax - rMin) * f);
+    const rMax = Math.max(0.008, Math.min(1.05, spanMin * 0.42));
+    const radii = [0.32, 0.58, 0.8, 1.0];
     const seeds = [];
     let guard = 0;
 
@@ -438,13 +560,19 @@ export class FieldViz {
 
       // base 在米制，先换成世界单位，再叠加世界单位下的偏移
       const bx = base[0] * M2W, by = base[1] * M2W, bz = base[2] * M2W;
+      // 该段导体的绘制半径（世界单位）
+      const radW = (solver.rad ? solver.rad[k] : solver.conductorRadius) * M2W;
+      // 上限必须是「盒子放得下」和「导体外面」两者取小：
+      // 吸附到细导线后盒子只有一两毫米，如果沿用固定的 0.2~1 格半径，
+      // 种子会全部落在盒外或者贴着导体被拒 → 只剩几条线
+      const hi = Math.max(radW * 1.6, Math.min(rMax, radW * 12));
+      const lo = Math.min(hi * 0.92, radW * 1.5);
       let r;
       if (field === 'E') {
-        // 电场线贴着导体表面长出来（半径按该段导体自己的半径换算）
-        const radW = (solver.rad ? solver.rad[k] : solver.conductorRadius) * M2W;
-        r = radW * (1.25 + 2.6 * halton(i, 3));
+        r = lo + (hi - lo) * halton(i, 3);
       } else {
-        r = radii[Math.floor(halton(i, 5) * radii.length) % radii.length];
+        const f = radii[Math.floor(halton(i, 5) * radii.length) % radii.length];
+        r = lo + (hi - lo) * f;
       }
       const th = i * GOLDEN_ANGLE;
       const ca = Math.cos(th) * r, sa = Math.sin(th) * r;
@@ -457,10 +585,57 @@ export class FieldViz {
       if (p[0] < box.min[0] || p[0] > box.max[0]) continue;
       if (p[1] < box.min[1] || p[1] > box.max[1]) continue;
       if (p[2] < box.min[2] || p[2] > box.max[2]) continue;
-      if (nearestConductorRatio(solver, p[0] * W2M, p[1] * W2M, p[2] * W2M) < 1.3) continue;
+      if (nearestConductorRatio(solver, p[0] * W2M, p[1] * W2M, p[2] * W2M) < 1.2) continue;
       seeds.push(p);
     }
     return seeds;
+  }
+
+  /** 在导体内部撒种（半径小于该段导体自己的半径），用来画导体内部的场线 */
+  makeInteriorSeeds(solver, box, n) {
+    const fract = (x) => x - Math.floor(x);
+    const halton = (i, b) => { let f = 1, r = 0, k = i + 1; while (k > 0) { f /= b; r += f * (k % b); k = Math.floor(k / b); } return r; };
+    const GOLDEN_ANGLE = 2.399963229728653;
+    const out = [];
+    for (let i = 0; i < n; i++) {
+      const k = Math.floor(fract(i * 0.6180339887498949 + 0.317) * solver.n);
+      const a = solver.rad ? solver.rad[k] : solver.conductorRadius;
+      const L = solver.len[k];
+      if (!(a > 0) || !(L > 1e-9)) continue;
+      const i3 = 3 * k;
+      const p0 = [solver.p0[i3], solver.p0[i3 + 1], solver.p0[i3 + 2]];
+      const p1 = [solver.p1[i3], solver.p1[i3 + 1], solver.p1[i3 + 2]];
+      const u = [(p1[0] - p0[0]) / L, (p1[1] - p0[1]) / L, (p1[2] - p0[2]) / L];
+      const ref = Math.abs(u[1]) < 0.9 ? [0, 1, 0] : [1, 0, 0];
+      let e1 = [
+        u[1] * ref[2] - u[2] * ref[1],
+        u[2] * ref[0] - u[0] * ref[2],
+        u[0] * ref[1] - u[1] * ref[0],
+      ];
+      const l1 = Math.hypot(e1[0], e1[1], e1[2]) || 1;
+      e1 = [e1[0] / l1, e1[1] / l1, e1[2] / l1];
+      const e2 = [
+        u[1] * e1[2] - u[2] * e1[1],
+        u[2] * e1[0] - u[0] * e1[2],
+        u[0] * e1[1] - u[1] * e1[0],
+      ];
+      const t = fract(i * 0.7548776662466927 + 0.21);
+      const bx = p0[0] + (p1[0] - p0[0]) * t;
+      const by = p0[1] + (p1[1] - p0[1]) * t;
+      const bz = p0[2] + (p1[2] - p0[2]) * t;
+      const rr = a * (0.25 + 0.5 * halton(i, 7));
+      const th = i * GOLDEN_ANGLE;
+      const pw = [
+        (bx + e1[0] * Math.cos(th) * rr + e2[0] * Math.sin(th) * rr) * M2W,
+        (by + e1[1] * Math.cos(th) * rr + e2[1] * Math.sin(th) * rr) * M2W,
+        (bz + e1[2] * Math.cos(th) * rr + e2[2] * Math.sin(th) * rr) * M2W,
+      ];
+      if (pw[0] < box.min[0] || pw[0] > box.max[0]) continue;
+      if (pw[1] < box.min[1] || pw[1] > box.max[1]) continue;
+      if (pw[2] < box.min[2] || pw[2] > box.max[2]) continue;
+      out.push({ p: pw, inside: true, h: a * M2W * 0.35 });
+    }
+    return out;
   }
 
   /* ---- 切片热图 + 等值线 ---- */

@@ -35,6 +35,7 @@ const state = {
   sliceAxis: 'y',
   slicePos: 0,
   colorByPot: true,
+  interior: false,     // 是否画导体内部的场
   autoRotate: false,
   wireRadius: 0.05,     // 世界单位（1 单位 = 1 cm）
   analysisOn: false,
@@ -149,6 +150,7 @@ function updatePane() {
     field: state.field,
     mode: state.mode,
     density: state.paneDensity,
+    interior: state.interior,
     opacity: state.opacity,
     colorByPotential: state.colorByPot,
     sliceAxis: state.sliceAxis,
@@ -166,6 +168,7 @@ function updateViz() {
     field: state.field,
     mode: state.mode,
     density: state.density,
+    interior: state.interior,
     opacity: state.opacity,
     sliceAxis: state.sliceAxis,
     slicePos: state.slicePos,
@@ -349,6 +352,20 @@ $('sp-snap')?.addEventListener('click', () => {
 });
 $('sp-showbox')?.addEventListener('change', (e) => boxGizmo.setVisible(e.target.checked));
 
+const applyInterior = () => {
+  scene3d.setGhost(state.interior);
+  slicePane.scene.setGhost(state.interior);
+  updateViz();
+  updatePane();
+};
+
+$('show-inside')?.addEventListener('change', (e) => {
+  state.interior = e.target.checked;
+  applyInterior();
+});
+if ($('show-inside')) $('show-inside').checked = state.interior;
+if (state.interior) applyInterior();
+
 $('sp-density')?.addEventListener('input', (e) => {
   state.paneDensity = +e.target.value / 100;
   clearTimeout(window.__pdv);
@@ -477,6 +494,7 @@ const qs = new URLSearchParams(location.search);
     }
   }
   if (qs.get('seeds') === 'uniform') viz.seedMode = 'uniform';
+  if (qs.get('inside') === '1') state.interior = true;
   if (qs.get('wire')) state.wireRadius = Math.min(0.14, Math.max(0.01, +qs.get('wire') / 100));
   if (qs.get('editor') === '0') {
     $('leftCol').classList.add('hidden');
@@ -492,11 +510,14 @@ function syncUIFromState() {
   $('color-pot').checked = state.colorByPot;
   $('wire-radius').value = String(Math.round(state.wireRadius * 100));
   $('wire-label').textContent = `导线半径 ${(state.wireRadius * 10).toFixed(2)} mm`;
+  if ($("show-inside")) $("show-inside").checked = state.interior;
   syncModeChips();
 }
 
 syncUIFromState();
 updateLegend();
+scene3d.setGhost(state.interior);
+slicePane.scene.setGhost(state.interior);
 rebuild();
 if (state.analysisOn) {
   $('btn-analysis').classList.add('active');
@@ -635,6 +656,26 @@ function runSelfTest() {
       ok(true, '拖动截取框 setWorldBox');
     } catch (err) {
       ok(false, '拖动截取框抛错', String(err.message).slice(0, 80));
+    }
+
+    // 9.555 导体内部：箭头 + 流线都要能渲染（曾经因为漏写方法直接抛错）
+    try {
+      state.mode = 'stream';
+      state.field = 'B';
+      state.interior = true;
+      updateViz();
+      updatePane();
+      ok(viz.lastStats && viz.lastStats.lines > 0, '导体内部流线可渲染');
+      state.mode = 'arrows';
+      updateViz();
+      const ia = viz.interiorArrows;
+      ok(!ia || ia.count > 0, '导体内部箭头可渲染');
+      state.interior = false;
+      state.mode = 'stream';
+      updateViz();
+    } catch (err) {
+      ok(false, '导体内部渲染抛错', String(err.message).slice(0, 80));
+      state.interior = false;
     }
 
     // 9.56 移动体块时，面板相机要跟着平移（画面里框在动、视角不动）
