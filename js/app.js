@@ -655,6 +655,31 @@ function runSelfTest() {
       ok(false, '截取空间面板抛错', String(err.message).slice(0, 80));
     }
 
+    // 9.65 截面三维交互：合成一个 pointerdown，看是否被拾取
+    try {
+      state.sliceOn = true;
+      slice.show(true);
+      slice.state.cx = 0; slice.state.cy = 0; slice.state.cz = 0;
+      slice.update();
+      scene3d.camera.updateMatrixWorld();
+      const p = slice.projectedCenter();
+      if (!p.onScreen) {
+        ok(false, '截面中心不在屏幕上（无法测交互）');
+      } else {
+        const target = slice.scene3d.renderer.domElement;
+        target.dispatchEvent(new PointerEvent('pointerdown', {
+          clientX: p.x, clientY: p.y, bubbles: true, cancelable: true, pointerId: 1,
+        }));
+        ok(!!slice._drag, '截面拖动事件被拾取');
+        document.dispatchEvent(new PointerEvent('pointerup', { bubbles: true, pointerId: 1 }));
+        ok(!slice._drag, '松手后拖动状态被清除');
+      }
+      slice.show(false);
+      state.sliceOn = false;
+    } catch (err) {
+      ok(false, '截面交互测试抛错', String(err.message).slice(0, 80));
+    }
+
     // 9.7 断路（电池 + 两根断头线）→ 判定为零场，不画任何东西
     try {
       const backup = circuit.elements;

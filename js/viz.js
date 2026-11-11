@@ -260,7 +260,7 @@ export class FieldViz {
     const { solver, field } = o;
     const fn = makeFieldFn(field, solver);
     const density = o.density ?? 0.5;
-    const nLines = Math.round((field === 'E' ? 16 : 10) + density * (field === 'E' ? 120 : 88));
+    const nLines = Math.round((field === 'E' ? 14 : 10) + density * (field === 'E' ? 100 : 68));
     const seeds = this.makeSeeds(solver, box, nLines, field);
 
     const positions = [];
@@ -284,7 +284,7 @@ export class FieldViz {
       allPts.push({ line, lineMags });
 
       // 沿线插方向标记：每条线大约 8 个，起点错开，避免所有标记排成一排
-      const spacing = Math.max(6, Math.floor(line.length / 6));
+      const spacing = Math.max(8, Math.floor(line.length / 4));
       for (let i = spacing; i < line.length - 1; i += spacing) {
         const a = line[Math.max(0, i - 1)], b = line[Math.min(line.length - 1, i + 1)];
         const dx = b[0] - a[0], dy = b[1] - a[1], dz = b[2] - a[2];
@@ -311,7 +311,7 @@ export class FieldViz {
     const mat = new THREE.LineBasicMaterial({
       vertexColors: true,
       transparent: true,
-      opacity: o.opacity ?? 0.95,
+      opacity: (o.opacity ?? 0.95) * 0.85,
       depthWrite: false,
     });
     this.lines = new THREE.LineSegments(geo, mat);
@@ -383,8 +383,16 @@ export class FieldViz {
     }
     if (!cand.length || total <= 0) return [];
 
-    // 磁场按「分层半径」排布，场线会形成一圈圈嵌套家族
-    const radii = [0.22, 0.3, 0.42, 0.58, 0.8, 1.05];
+    // 撒点半径要跟着采样盒子走：吸附到细导线后盒子只有一两毫米，
+    // 用固定的 0.2~1 格半径会让种子全部落在盒外（只剩几根线）
+    const spanMin = Math.min(
+      box.max[0] - box.min[0],
+      box.max[1] - box.min[1],
+      box.max[2] - box.min[2]
+    );
+    const rMax = Math.max(0.008, Math.min(1.05, spanMin * 0.35));
+    const rMin = Math.max(rMax * 0.12, 0.004);
+    const radii = [0.32, 0.58, 0.8, 1.0].map((f) => rMin + (rMax - rMin) * f);
     const seeds = [];
     let guard = 0;
 

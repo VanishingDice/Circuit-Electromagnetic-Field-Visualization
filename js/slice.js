@@ -573,6 +573,18 @@ export class SliceTool {
     d.head.addEventListener('pointerup', () => { drag = null; });
   }
 
+  /** 平面中心投影到页面坐标（自检/调试用） */
+  projectedCenter() {
+    const dom = this.scene3d.renderer.domElement;
+    const r = dom.getBoundingClientRect();
+    const c = new THREE.Vector3(...this.plane.center).project(this.scene3d.camera);
+    return {
+      x: r.left + (c.x * 0.5 + 0.5) * r.width,
+      y: r.top + (-c.y * 0.5 + 0.5) * r.height,
+      onScreen: Math.abs(c.x) < 1 && Math.abs(c.y) < 1 && c.z < 1,
+    };
+  }
+
   /** 在主视图里直接操作这块截面：拖动=沿法向平移，Shift+拖动=旋转，滚轮=缩放 */
   _bind3d() {
     const dom = this.scene3d.renderer.domElement;
@@ -627,13 +639,14 @@ export class SliceTool {
         this.scene3d.camera.getWorldDirection(camDir);
         hitPlane.setFromNormalAndCoplanarPoint(camDir, d.point);
         if (ray.ray.intersectPlane(hitPlane, hitPoint)) {
-          const move =
-            (hitPoint.x - d.point.x) * d.n[0] +
-            (hitPoint.y - d.point.y) * d.n[1] +
-            (hitPoint.z - d.point.z) * d.n[2];
-          this.state.cx = d.cx + d.n[0] * move;
-          this.state.cy = d.cy + d.n[1] * move;
-          this.state.cz = d.cz + d.n[2] * move;
+          // 整段位移都跟上：沿法向的分量改变「切在哪」，面内的分量平移取样窗口，
+        // 两个方向都有可见反馈（原来只取法向分量，水平面左右拖就完全没反应）
+          const mx = hitPoint.x - d.point.x;
+          const my = hitPoint.y - d.point.y;
+          const mz = hitPoint.z - d.point.z;
+          this.state.cx = d.cx + mx;
+          this.state.cy = d.cy + my;
+          this.state.cz = d.cz + mz;
         }
       }
       this.update();
