@@ -7,6 +7,8 @@ import { Editor2D } from './editor2d.js';
 import { Scene3D } from './scene.js';
 import { FieldViz, turbo, diverging } from './viz.js';
 import { AnalysisCard } from './analysis.js';
+import { SliceTool } from './slice.js';
+import { VERSION, BUILD } from './version.js';
 
 const MODE_LABEL = { arrows: '箭头', stream: '流线', slice: '切片' };
 const FIELD_INFO = {
@@ -33,6 +35,7 @@ const state = {
   autoRotate: false,
   wireRadius: 0.05,     // 世界单位（1 单位 = 1 cm）
   analysisOn: false,
+  sliceOn: false,
 };
 
 const circuit = createDefaultCircuit();
@@ -53,6 +56,16 @@ const editor = new Editor2D(editorCanvas, {
 });
 editor.setCircuit(circuit);
 const analysis = new AnalysisCard($('analysis'));
+const slice = new SliceTool(scene3d, {
+  win: $('slicewin'), head: $('sw-head'), canvas: $('sw-canvas'),
+  title: $('sw-title'), res: $('sw-res'),
+  progress: $('sw-progress'), progressWrap: $('sw-progress-wrap'),
+  legend: $('sw-legend'), legendLo: $('sw-lo'), legendHi: $('sw-hi'), unit: $('sw-unit'),
+  pos: $('sw-pos'), yaw: $('sw-yaw'), pitch: $('sw-pitch'), size: $('sw-size'),
+  offsetLabel: $('sw-offset'), sizeLabel: $('sw-size-label'),
+  field: $('sw-field'), axisButtons: [...document.querySelectorAll('#sw-axis button')],
+  wireBtn: $('sw-wire'), popBtn: $('sw-pop'), closeBtn: $('sw-close'), probe: $('sw-probe'),
+});
 
 /* ---------------- 求解 + 重建 ---------------- */
 function rebuild() {
@@ -73,6 +86,13 @@ function rebuild() {
     scene3d.setCircuit(sceneData.parts, sceneData.bounds, { colorByPotential: state.colorByPot, frame });
     updateViz();
     if (state.analysisOn) updateAnalysis();
+    if (state.sliceOn) {
+      slice.setScene({
+        solver: sceneData.solver,
+        bounds: sceneData.bounds,
+        conductorR: state.wireRadius * METER_PER_UNIT,
+      });
+    }
     const t3 = performance.now();
     $('stats').innerHTML =
       `导体 <b>${sceneData.solver.n}</b> 段 · 节点 <b>${Object.keys(solution.nodeV).length}</b><br>` +
@@ -231,6 +251,19 @@ $('color-pot').addEventListener('change', (e) => {
   state.colorByPot = e.target.checked;
   if (sceneData) scene3d.setCircuit(sceneData.parts, sceneData.bounds, { colorByPotential: state.colorByPot, frame: false });
 });
+$('btn-slice').addEventListener('click', () => {
+  state.sliceOn = !state.sliceOn;
+  $('btn-slice').classList.toggle('active', state.sliceOn);
+  slice.show(state.sliceOn);
+  if (state.sliceOn) {
+    slice.setScene({
+      solver: sceneData?.solver,
+      bounds: sceneData?.bounds,
+      conductorR: state.wireRadius * METER_PER_UNIT,
+    });
+  }
+});
+
 $('btn-analysis').addEventListener('click', () => {
   state.analysisOn = !state.analysisOn;
   $('btn-analysis').classList.toggle('active', state.analysisOn);
@@ -324,6 +357,7 @@ window.addEventListener('keydown', (e) => {
   if (qs.has('slicePos')) state.slicePos = Math.min(1, Math.max(-1, +qs.get('slicePos') / 100));
   if (qs.get('sliceAxis')) state.sliceAxis = qs.get('sliceAxis');
   if (qs.get('analysis') === '1') state.analysisOn = true;
+  if (qs.get('slice') === '1') state.sliceOn = true;
   if (qs.get('wire')) state.wireRadius = Math.min(0.14, Math.max(0.01, +qs.get('wire') / 100));
   if (qs.get('editor') === '0') {
     $('editorPane').classList.add('hidden');
@@ -349,6 +383,16 @@ if (state.analysisOn) {
   $('btn-analysis').classList.add('active');
   $('analysis').classList.remove('hidden');
 }
+if (state.sliceOn) {
+  $('btn-slice').classList.add('active');
+  slice.show(true);
+  slice.setScene({
+    solver: sceneData?.solver,
+    bounds: sceneData?.bounds,
+    conductorR: state.wireRadius * METER_PER_UNIT,
+  });
+}
+$('version').textContent = 'v' + VERSION + (BUILD ? ' · ' + BUILD : '');
 // 等 CSS 过渡结束后按真实尺寸重新取景一次
 setTimeout(() => { scene3d.resize(); scene3d.reframe(); editor.resize(); }, 340);
 console.log('%c电磁场实验台 v0.1 · 直流', 'color:#58c4ff;font-weight:bold');
@@ -445,6 +489,20 @@ function runSelfTest() {
       try { updateViz(); ok(true, `切片轴向 ${axis}`); }
       catch (err) { ok(false, `切片轴向 ${axis} 抛错`, String(err.message).slice(0, 60)); }
     }
+
+    // 9.5 截面各种场都能算
+    for (const f of ['S', 'E', 'B', 'phi']) {
+      state.sliceOn = true;
+      slice.state.field = f;
+      try {
+        slice.setScene({ solver: sceneData.solver, bounds: sceneData.bounds, conductorR: 0.0005 });
+        slice.startRender(48);
+        ok(true, `截面渲染 ${f}`);
+      } catch (err) {
+        ok(false, `截面渲染 ${f} 抛错`, String(err.message).slice(0, 80));
+      }
+    }
+    state.sliceOn = false; slice.show(false);
 
     // 10. 清空后不崩溃
     circuit.elements = [];

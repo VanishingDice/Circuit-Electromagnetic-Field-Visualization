@@ -17,6 +17,7 @@ $shots = @(
   @{ name = "poynting";      q = "?field=S&mode=arrows&editor=0" },
   @{ name = "poynting-lines";q = "?field=S&mode=stream&editor=0" },
   @{ name = "analysis";      q = "?field=S&mode=arrows&editor=0&analysis=1&wire=8" },
+  @{ name = "slice";         q = "?field=S&mode=stream&editor=0&slice=1&wire=8" },
   @{ name = "editor";        q = "?field=B&mode=stream" }
 )
 
@@ -25,8 +26,9 @@ foreach ($s in $shots) {
   if (Test-Path $png) { Remove-Item $png -Force }
   & $chrome --headless=new --no-sandbox --disable-breakpad --disable-crash-reporter `
     --user-data-dir="$ud" --enable-unsafe-swiftshader --use-angle=swiftshader `
-    --hide-scrollbars --window-size=1600,950 --virtual-time-budget=10000 `
+    --hide-scrollbars --window-size=1600,950 --virtual-time-budget=14000 `
     --screenshot="$png" ($base + $s.q) 2>$null | Out-Null
-  if (Test-Path $png) { Write-Output ("  docs/{0,-16} {1,8:N0} bytes" -f ($s.name + ".png"), (Get-Item $png).Length) }
-  else { Write-Output ("  {0,-16} FAILED" -f $s.name) }
+  if (Test-Path $png) { Write-Output ("  docs/{0,-17} {1,8:N0} bytes" -f ($s.name + ".png"), (Get-Item $png).Length) }
+  else { Write-Output ("  {0,-17} FAILED" -f $s.name) }
 }
+

@@ -127,6 +127,7 @@ export class FieldViz {
     this.group = scene3d.fieldGroup;
     this.arrows = null;
     this.lines = null;
+    this.marks = null;
     this.slice = null;
     this.contours = null;
     this.lastStats = {};
@@ -136,6 +137,7 @@ export class FieldViz {
     this.scene3d.clearGroup(this.group);
     this.arrows = null;
     this.lines = null;
+    this.marks = null;
     this.slice = null;
     this.contours = null;
   }
@@ -257,6 +259,7 @@ export class FieldViz {
     const colors = [];
     const mags = [];
     const allPts = [];
+    const marks = [];
     const tmp = [0, 0, 0];
 
     for (const seed of seeds) {
@@ -271,6 +274,16 @@ export class FieldViz {
         if (m > 0 && isFinite(m)) mags.push(m);
       }
       allPts.push({ line, lineMags });
+
+      // 沿线插方向标记：每条线大约 8 个，起点错开，避免所有标记排成一排
+      const spacing = Math.max(6, Math.floor(line.length / 6));
+      for (let i = spacing; i < line.length - 1; i += spacing) {
+        const a = line[Math.max(0, i - 1)], b = line[Math.min(line.length - 1, i + 1)];
+        const dx = b[0] - a[0], dy = b[1] - a[1], dz = b[2] - a[2];
+        const l = Math.hypot(dx, dy, dz);
+        if (l < 1e-9) continue;
+        marks.push({ p: line[i], d: [dx / l, dy / l, dz / l], m: lineMags[i] });
+      }
     }
     if (!mags.length) return;
     const norm = makeNorm(mags);
@@ -294,7 +307,37 @@ export class FieldViz {
     });
     this.lines = new THREE.LineSegments(geo, mat);
     this.group.add(this.lines);
-    this.lastStats = { lines: allPts.length, norm, mags };
+
+    // 方向指示箭头（锥体），颜色跟随该点的场强
+    if (marks.length) {
+      const g2 = makeStreamArrowGeometry();
+      const m2 = new THREE.MeshBasicMaterial({ transparent: true, opacity: o.opacity ?? 0.95 });
+      const inst = new THREE.InstancedMesh(g2, m2, marks.length);
+      const q2 = new THREE.Quaternion();
+      const up2 = new THREE.Vector3(0, 1, 0);
+      const dv = new THREE.Vector3();
+      const dummy2 = new THREE.Object3D();
+      const col = new THREE.Color();
+      for (let n = 0; n < marks.length; n++) {
+        const mk = marks[n];
+        dv.set(mk.d[0], mk.d[1], mk.d[2]);
+        q2.setFromUnitVectors(up2, dv);
+        dummy2.position.set(mk.p[0], mk.p[1], mk.p[2]);
+        dummy2.quaternion.copy(q2);
+        dummy2.scale.setScalar(1);
+        dummy2.updateMatrix();
+        inst.setMatrixAt(n, dummy2.matrix);
+        const c = turbo(Math.max(0.28, norm(mk.m)));   // 弱场点也别黑成剪影
+        col.setRGB(c[0], c[1], c[2], THREE.SRGBColorSpace);
+        inst.setColorAt(n, col);
+      }
+      inst.instanceMatrix.needsUpdate = true;
+      if (inst.instanceColor) inst.instanceColor.needsUpdate = true;
+      this.marks = inst;
+      this.group.add(inst);
+    }
+
+    this.lastStats = { lines: allPts.length, marks: marks.length, norm, mags };
   }
 
   makeSeeds(solver, box, n, field) {
@@ -487,12 +530,19 @@ export class FieldViz {
 
 /* ---------------- 几何/积分 ---------------- */
 function makeArrowGeometry() {
-  const shaft = new THREE.CylinderGeometry(0.05, 0.05, 0.6, 6, 1, false);
-  shaft.translate(0, 0.3, 0);
-  const head = new THREE.ConeGeometry(0.14, 0.4, 8);
-  head.translate(0, 0.6 + 0.2, 0);
+  // 细长箭头：杆和头的半径都压小，远景才不会糊成一片
+  const shaft = new THREE.CylinderGeometry(0.022, 0.022, 0.62, 6, 1, false);
+  shaft.translate(0, 0.31, 0);
+  const head = new THREE.ConeGeometry(0.058, 0.38, 8);
+  head.translate(0, 0.62 + 0.19, 0);
   const g = mergeGeos([shaft, head]);
   g.translate(0, -0.5, 0);
+  return g;
+}
+
+function makeStreamArrowGeometry() {
+  const g = new THREE.ConeGeometry(0.028, 0.105, 5, 1, true);
+  g.translate(0, 0.052, 0);
   return g;
 }
 

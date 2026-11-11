@@ -10,10 +10,12 @@
 import io
 import os
 import re
+import subprocess
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 MODULES = [
+    'js/version.js',
     'js/palette.js',
     'js/field.js',
     'js/circuit.js',
@@ -21,6 +23,7 @@ MODULES = [
     'js/viz.js',
     'js/editor2d.js',
     'js/analysis.js',
+    'js/slice.js',
     'js/app.js',
 ]
 
@@ -116,6 +119,16 @@ def build_module(rel):
     )
 
 
+def git_hash():
+    try:
+        out = subprocess.check_output(
+            ['git', 'rev-parse', '--short', 'HEAD'],
+            cwd=ROOT, stderr=subprocess.DEVNULL)
+        return out.decode().strip()
+    except Exception:
+        return None
+
+
 def main():
     css = read('css/style.css')
     html = read('index.html')
@@ -124,6 +137,12 @@ def main():
     for rel in MODULES:
         bundle.append(build_module(rel))
     bundle_js = '\n'.join(bundle)
+
+    # 把 git 短哈希写进版本号（version.js 里的 BUILD）
+    h = git_hash()
+    if h:
+        bundle_js = bundle_js.replace('const BUILD = null;', f"const BUILD = '{h}';")
+        print(f'  版本号带上 git 哈希: {h}')
 
     # 去掉 importmap 与 module script，改为内联（用 lambda 避免把 JS 里的反斜杠当转义）
     html = re.sub(r'<script type="importmap">.*?</script>\s*', '', html, flags=re.S)

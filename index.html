@@ -39,6 +39,7 @@
     </div>
 
     <div class="topbar-actions">
+      <button id="btn-slice" class="ghost" title="可移动/旋转的分析截面 + 高精度窗口">截面</button>
       <button id="btn-analysis" class="ghost" title="看清导线内部的能量流向">剖面</button>
       <button id="btn-rotate" class="ghost" title="让相机缓慢旋转">环绕</button>
       <button id="btn-edit" class="ghost" title="显示 / 隐藏电路编辑器">编辑器</button>
@@ -111,6 +112,54 @@
       </div>
 
       <div class="overlay legend-hint" id="hint"></div>
+      <div class="version" id="version">v—</div>
+
+      <div class="overlay slicewin hidden" id="slicewin">
+        <div class="sw-head" id="sw-head">
+          <span class="sw-title">截面 · <b id="sw-title">|S| 能流</b></span>
+          <span class="sw-btns">
+            <button id="sw-pop" title="在独立窗口里打开（可拖到另一块屏幕）">独立窗口</button>
+            <button id="sw-close" title="关闭">×</button>
+          </span>
+        </div>
+        <div class="sw-canvas">
+          <canvas id="sw-canvas" width="256" height="256"></canvas>
+          <div class="sw-progress-wrap hidden" id="sw-progress-wrap">
+            <div class="sw-progress" id="sw-progress"></div>
+          </div>
+          <span class="sw-res" id="sw-res">256²</span>
+        </div>
+        <div class="sw-legend">
+          <div class="sw-bar" id="sw-legend"></div>
+          <div class="sw-scale">
+            <span id="sw-lo">—</span><span id="sw-hi">—</span>
+          </div>
+          <div class="sw-unit" id="sw-unit"></div>
+        </div>
+        <div class="sw-ctl">
+          <label><span>位置 <i id="sw-offset">0.00 格</i></span>
+            <input type="range" id="sw-pos" min="-100" max="100" value="0"></label>
+          <label><span>偏航</span><input type="range" id="sw-yaw" min="0" max="360" value="0"></label>
+          <label><span>俯仰</span><input type="range" id="sw-pitch" min="-90" max="90" value="90"></label>
+          <label><span>尺寸 <i id="sw-size-label">3.40 格</i></span>
+            <input type="range" id="sw-size" min="2" max="90" value="34"></label>
+        </div>
+        <div class="sw-foot">
+          <div class="seg" id="sw-axis">
+            <button data-axis="x">X</button>
+            <button data-axis="y" class="active">Y</button>
+            <button data-axis="z">Z</button>
+          </div>
+          <select id="sw-field">
+            <option value="S">|S| 能流</option>
+            <option value="E">|E| 电场</option>
+            <option value="B">|B| 磁场</option>
+            <option value="phi">φ 电势</option>
+          </select>
+          <button id="sw-wire" class="ghost">贴合导线</button>
+        </div>
+        <div class="sw-probe" id="sw-probe"></div>
+      </div>
 
       <div class="overlay analysis hidden" id="analysis">
         <div class="an-head">
