@@ -3,9 +3,10 @@
  *   node tools/test_core.mjs
  * 检查：MNA 工作点是否合理、场的量级、以及坡印廷矢量的方向（能量从电池流向电阻）。
  */
-import { createDefaultCircuit, solveCircuit, buildScene, worldOf, key,
+import { createDefaultCircuit, solveCircuit, buildScene, worldOf, key,
+
          createTransient, solveTransient } from '../js/circuit.js';
-import { MU0, KE } from '../js/field.js';
+import { MU0, KE, FieldSolver } from '../js/field.js';
 
 let fails = 0;
 const ok = (cond, msg, extra = '') => {
@@ -261,6 +262,30 @@ console.log('== 时域：后向欧拉收敛到直流解 ==');
   ok(close(iEnd, I0, 0.01), '10 ms 后 I_L 收敛到直流解',
     `${(iEnd * 1000).toFixed(2)} vs ${(I0 * 1000).toFixed(2)} mA`);
   ok(Math.abs(iEnd - I0) < Math.abs(I0) * 0.01, '误差 < 1%');
+}
+
+console.log('== 高精度模式（圆柱带面元）vs 解析电容 ==');
+{
+  const EPS0 = 8.8541878128e-12;
+  const a = 2e-4, d = 1e-2, L = 0.3, seg = 0.006;
+  const analytic = Math.PI * EPS0 / Math.log(d / a);
+  const capOf = (model) => {
+    const fs = new FieldSolver(a, a, { model });
+    const n = Math.round(L / seg), h = L / n;
+    for (let k = 0; k < n; k++) fs.add([-d / 2, 0, -L / 2 + k * h], [-d / 2, 0, -L / 2 + (k + 1) * h], 1, 0, 0, a);
+    for (let k = 0; k < n; k++) fs.add([d / 2, 0, -L / 2 + k * h], [d / 2, 0, -L / 2 + (k + 1) * h], -1, 0, 0, a);
+    fs.build().solve();
+    let q = 0;
+    for (let i = 0; i < n; i++) q += fs.lam[i] * fs.len[i];
+    return q / 2 / L;
+  };
+  const cw = capOf('wire');
+  const cb = capOf('band');
+  const ew = (cw - analytic) / analytic * 100;
+  const eb = (cb - analytic) / analytic * 100;
+  console.log(`  解析 ${analytic.toExponential(3)}  wire ${cw.toExponential(3)} (${ew.toFixed(1)}%)  band ${cb.toExponential(3)} (${eb.toFixed(1)}%)`);
+  ok(Math.abs(eb) < 3, '带面元电容误差 < 3%', `${eb.toFixed(2)}%`);
+  ok(Math.abs(eb) < Math.abs(ew) / 5, '带面元比细线至少准 5 倍');
 }
 
 console.log(fails === 0 ? '\n全部通过 ✅' : `\n${fails} 项失败 ❌`);

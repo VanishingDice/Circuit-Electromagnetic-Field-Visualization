@@ -38,6 +38,7 @@ const state = {
   colorByPot: true,
   interior: false,     // 是否画导体内部的场
   insideMap: false,    // 内部箭头是否用外侧同款色标
+  kernel: 'wire',      // 场求解核：wire=细线(快) / band=圆柱带面元(准)
   arrowScale: 1,       // 箭头大小全局系数
   timeOn: false,       // 时域模式
   boxLock: { x: false, y: false, z: false },   // 锁定后拖动截取框不会改这一轴
@@ -103,7 +104,7 @@ function rebuild() {
   try {
     solution = (state.timeOn && tSol) ? tSol : solveCircuit(circuit);
     const t1 = performance.now();
-    sceneData = buildScene(circuit, solution, { wireRadius: state.wireRadius });
+    sceneData = buildScene(circuit, solution, { wireRadius: state.wireRadius, kernel: state.kernel });
     const t2 = performance.now();
     editor.setSolution(solution);
 
@@ -482,6 +483,7 @@ $('show-inside')?.addEventListener('change', (e) => {
 });
 if ($('show-inside')) $('show-inside').checked = state.interior;
 if ($('inside-map')) $('inside-map').checked = state.insideMap;
+if ($('kernel-band')) $('kernel-band').checked = state.kernel === 'band';
 if ($('arrow-size')) $('arrow-size').value = String(Math.round(state.arrowScale * 100));
 if (state.interior) applyInterior();
 
@@ -738,6 +740,7 @@ const qs = new URLSearchParams(location.search);
   if (qs.get('dbg') === '1') state.debugStats = true;
   if (qs.get('arrow')) state.arrowScale = Math.max(0.3, Math.min(2.5, +qs.get('arrow') / 100));
   if (qs.get('insidemap') === '1') state.insideMap = true;
+  if (qs.get('kernel') === 'band') state.kernel = 'band';
   if (qs.get('time') === '1') state.timeOn = true;
   if (qs.get('circuit') === 'simple') circuit.elements = createSimpleLoop().elements;
   if (qs.get('inside') === '1') state.interior = true;

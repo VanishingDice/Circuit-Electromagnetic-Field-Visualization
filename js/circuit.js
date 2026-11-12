@@ -391,8 +391,14 @@ export function buildScene(circuit, solution, opts = {}) {
   // 边界元用的细线半径：细线近似要求 半径 ≪ 线段长，所以固定得比较细
   // 边界元必须用细线：实测把物理半径提到 0.5mm 后，为了保持 a≪L 得把线段放到
   // 6mm，闭合曲面通量误差从 13% 涨到 81%。所以这里固定用细线，画面上的粗细另算。
-  const physicsRadius = Math.min(wireRadius, 0.02);
-  const SEG_LEN = Math.max(SEG_LEN_MIN, SEG_FACTOR * physicsRadius);
+  // 高精度模式（圆柱带面元）：显示半径就是计算半径，不再有 2.5 倍的表面场偏差。
+  // 细线模式必须用细线（a ≪ L），否则自项的细线近似失效。
+  const kernel = opts.kernel === 'band' ? 'band' : 'wire';
+  const physicsRadius = kernel === 'band' ? wireRadius : Math.min(wireRadius, 0.02);
+  // 带面元的段长只需 ≳4a；细线要求 ≫a
+  const SEG_LEN = kernel === 'band'
+    ? Math.max(SEG_LEN_MIN * 0.5, 4 * physicsRadius)
+    : Math.max(SEG_LEN_MIN, SEG_FACTOR * physicsRadius);
   const parts = [];
   const segs = [];
   const M = METER_PER_UNIT;
@@ -559,7 +565,7 @@ export function buildScene(circuit, solution, opts = {}) {
   }
 
   // 场求解器
-  const solver = new FieldSolver(physicsRadius * M, wireRadius * M);
+  const solver = new FieldSolver(physicsRadius * M, wireRadius * M, { model: kernel });
   for (const s of segs) solver.add(s.p0, s.p1, s.pot, s.cur, s.eAx, s.radius);
   solver.build().solve();
 

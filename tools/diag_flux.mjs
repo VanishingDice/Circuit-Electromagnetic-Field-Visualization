@@ -18,7 +18,9 @@ const c = {
   ],
 };
 const sol = solveCircuit(c);
-const sc = buildScene(c, sol, { wireRadius: 0.05 });
+const KERNEL = process.argv[2] === 'band' ? 'band' : 'wire';
+const sc = buildScene(c, sol, { wireRadius: 0.05, kernel: KERNEL });
+console.log('核函数:', KERNEL);
 const s = sc.solver;
 const I = Math.abs(sol.elCurrent[c.elements[2].id]);
 const P = I * I * 100;

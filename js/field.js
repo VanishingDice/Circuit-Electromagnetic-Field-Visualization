@@ -18,6 +18,78 @@ export const KE = 1 / (4 * Math.PI * 8.8541878128e-12); // 1/4πε0
 export const MU0 = 4 * Math.PI * 1e-7;
 export const METER_PER_UNIT = 0.01;
 
+/* ------------------------------------------------------------------ *
+ *  圆柱面元（高精度模式）用的核函数
+ * ------------------------------------------------------------------ */
+
+const EPS0 = 8.8541878128e-12;
+
+// 16 点高斯-勒让德
+const GX = new Float64Array(16);
+const GW = new Float64Array(16);
+(() => {
+  const n = 16;
+  for (let i = 0; i < n; i++) {
+    let z = Math.cos((Math.PI * (i + 0.75)) / (n + 0.5));
+    let pp = 1;
+    for (let it = 0; it < 40; it++) {
+      let p0 = 1, p1 = z;
+      for (let j = 2; j <= n; j++) {
+        const p2 = ((2 * j - 1) * z * p1 - (j - 1) * p0) / j;
+        p0 = p1; p1 = p2;
+      }
+      pp = (n * (z * p1 - p0)) / (z * z - 1);
+      const d = p1 / pp;
+      z -= d;
+      if (Math.abs(d) < 1e-15) break;
+    }
+    GX[i] = z;
+    GW[i] = 2 / ((1 - z * z) * pp * pp);
+  }
+})();
+
+/** 第一类完全椭圆积分 K(k)，AGM */
+export function ellipK(k) {
+  let a = 1, b = Math.sqrt(Math.max(0, 1 - k * k));
+  for (let i = 0; i < 40 && Math.abs(a - b) > 1e-15; i++) {
+    const an = 0.5 * (a + b);
+    b = Math.sqrt(a * b);
+    a = an;
+  }
+  return Math.PI / (2 * a);
+}
+
+/** 半径 R 的圆环（线电荷密度 1 C/m）在 (ρ, dz) 的电位 [V·m/C] */
+export function ringPotPerLen(R, rho, dz) {
+  const A = (R + rho) * (R + rho) + dz * dz;
+  const k2 = Math.min(1 - 1e-16, (4 * R * rho) / A);
+  return (1 / (2 * Math.PI * Math.PI * EPS0)) * ellipK(Math.sqrt(k2)) / Math.sqrt(A);
+}
+
+/**
+ * 圆柱带（半径 R、长 L、表面电荷密度 1 C/m²）的电位系数 [V per C/m²]。
+ * near=true 时沿轴做 8×16 分片高斯（处理 dz≈t 的对数奇点）。
+ */
+export function bandCoeff(R, L, rho, dz, near) {
+  if (!(L > 0)) return 0;
+  const w = 2 * Math.PI * R;
+  if (!near) return w * L * ringPotPerLen(R, rho, dz);
+  const PANELS = 8;
+  const half = L / 2;
+  let sum = 0;
+  for (let p = 0; p < PANELS; p++) {
+    const t0 = -half + (L * p) / PANELS;
+    const t1 = -half + (L * (p + 1)) / PANELS;
+    const m = 0.5 * (t0 + t1), hr = 0.5 * (t1 - t0);
+    for (let g = 0; g < 16; g++) {
+      const t = m + hr * GX[g];
+      sum += GW[g] * hr * ringPotPerLen(R, rho, dz - t);
+    }
+  }
+  return w * sum;
+}
+
+
 export class FieldSolver {
   /**
    * @param {number} wireRadius 边界元细线半径（决定自项与近场截断）
@@ -25,9 +97,16 @@ export class FieldSolver {
    *   两者分开是因为细线近似要求 半径 ≪ 线段长；画面上的导线可以画得更粗，
    *   但边界元仍按细线求解。
    */
-  constructor(wireRadius = 0.0002, conductorRadius = wireRadius) {
+  /**
+   * @param {number} [wireRadius] 细线半径（也用作面元模式的导体半径）
+   * @param {number} [conductorRadius] 导体圆柱半径（决定「内部」范围与内部解析场）
+   */
+  constructor(wireRadius = 0.0002, conductorRadius = wireRadius, opts = {}) {
     this.wireRadius = wireRadius;
     this.conductorRadius = conductorRadius;
+    // 'wire' = 细线 BEM（快，有 ~25% 系统误差）
+    // 'band' = 圆柱带面元（慢一些，~1%，且显示半径=计算半径）
+    this.model = opts.model || 'wire';
     this._p0 = [];
     this._p1 = [];
     this._pot = [];
@@ -104,6 +183,7 @@ export class FieldSolver {
   solve() {
     const n = this.n;
     if (n === 0) return this;
+    if (this.model === 'band') return this._solveBand();
     const A = new Float64Array(n * (n + 2)); // 两列右端：V 和 1
     const { p0, p1, len, mid, vpot } = this;
     const a0 = this.wireRadius;
@@ -152,6 +232,77 @@ export class FieldSolver {
     }
     const c = Math.abs(q1) > 1e-30 ? -q0 / q1 : 0;
     for (let i = 0; i < n; i++) this.lam[i] = lam0[i] + c * lam1[i];
+    this.netCharge = q0 + c * q1;
+    this.potShift = c;
+    return this;
+  }
+
+  /* ------------------------------------------------------------------ *
+   *  圆柱带面元求解（高精度模式）
+   *
+   *  导体 = 一串半径 r_i、长 L_i 的圆柱带，每带表面电荷密度 σ_i 均匀。
+   *  对直线段这是**精确参数化**（轴对称解里 σ 只沿轴变化），
+   *  所以只要 L_i ≳ 4 r_i 就有 ~1% 精度；细线模型则是 ~25% 且不收敛。
+   *
+   *  未知数 σ_i [C/m²]，最后换算成等效线电荷 λ_i = σ_i·2πr_i 供场求值复用。
+   * ------------------------------------------------------------------ */
+  _solveBand() {
+    const n = this.n;
+    const { p0, p1, len, mid, vpot, rad } = this;
+    const A = new Float64Array(n * (n + 2));
+    const r = (i) => (rad && rad[i] > 0 ? rad[i] : this.wireRadius);
+    // 单位方向的轴向投影：ρ = 点到 j 轴的距离，dz = 沿轴偏移
+    const proj = (px, py, pz, j) => {
+      const i3 = 3 * j;
+      const L = len[j] || 1e-9;
+      const ux = (p1[i3] - p0[i3]) / L, uy = (p1[i3 + 1] - p0[i3 + 1]) / L, uz = (p1[i3 + 2] - p0[i3 + 2]) / L;
+      const dx = px - mid[i3], dy = py - mid[i3 + 1], dz = pz - mid[i3 + 2];
+      const along = dx * ux + dy * uy + dz * uz;
+      const px2 = dx - along * ux, py2 = dy - along * uy, pz2 = dz - along * uz;
+      return { rho: Math.hypot(px2, py2, pz2), dz: along };
+    };
+
+    for (let i = 0; i < n; i++) {
+      const mx = mid[3 * i], my = mid[3 * i + 1], mz = mid[3 * i + 2];
+      const row = i * (n + 2);
+      const ri = r(i);
+      for (let j = 0; j < n; j++) {
+        const rj = r(j);
+        const { rho, dz } = proj(mx, my, mz, j);
+        // 同一段：配置点在其自身表面（ρ=ri），要沿线积分（含对数奇点）
+        const self = i === j;
+        const near = self || Math.abs(dz) < 2.5 * (len[j] || 1e-9);
+        A[row + j] = bandCoeff(rj, len[j] || 1e-9, self ? ri : rho, dz, near);
+      }
+      A[row + n] = vpot[i];
+      A[row + n + 1] = 1;
+    }
+
+    this._gauss(A, n, 2);
+
+    const sig0 = new Float64Array(n), sig1 = new Float64Array(n);
+    for (let i = 0; i < n; i++) {
+      const row = i * (n + 2);
+      sig0[i] = A[row + n];
+      sig1[i] = A[row + n + 1];
+    }
+
+    // 净电荷 Σσ·2πr·L = 0（孤立电路），用整体电位平移 c 满足
+    let q0 = 0, q1 = 0;
+    for (let i = 0; i < n; i++) {
+      const w = 2 * Math.PI * r(i) * len[i];
+      q0 += sig0[i] * w;
+      q1 += sig1[i] * w;
+    }
+    const c = Math.abs(q1) > 1e-30 ? -q0 / q1 : 0;
+
+    if (!this.sigma) this.sigma = new Float64Array(n);
+    for (let i = 0; i < n; i++) {
+      const sig = sig0[i] + c * sig1[i];
+      this.sigma[i] = sig;
+      // 等效线电荷：远场求值时当成一根线电荷，多极误差 (a/r)²
+      this.lam[i] = sig * 2 * Math.PI * r(i);
+    }
     this.netCharge = q0 + c * q1;
     this.potShift = c;
     return this;
