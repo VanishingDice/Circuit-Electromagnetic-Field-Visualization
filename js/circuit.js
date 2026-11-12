@@ -401,6 +401,7 @@ export function buildScene(circuit, solution, opts = {}) {
     : Math.max(SEG_LEN_MIN, SEG_FACTOR * physicsRadius);
   const parts = [];
   const segs = [];
+  const virtualCur = [];   // 只贡献电流（B 场）、不参与电荷求解的线段
   const M = METER_PER_UNIT;
 
   const pushSeg = (p0, p1, pot, cur, eAx = 0, radius = null) => {
@@ -516,8 +517,13 @@ export function buildScene(circuit, solution, opts = {}) {
         const half = PLATE_GAP / 2;
         const p1c = V3.add(mid, V3.mul(axis, -half));
         const p2c = V3.add(mid, V3.mul(axis, half));
-        addPath([A, p1c], Va, Va, { current: 0 });
-        addPath([p2c, B], Vb, Vb, { current: 0 });
+        // 引线上要带充电电流，否则电容附近没有 B 场，能流会被别处的电流带歪
+        addPath([A, p1c], Va, Va, { current: I });
+        addPath([p2c, B], Vb, Vb, { current: I });
+        // 极板之间是位移电流：它不产生电荷，但要让 B 场连续
+        if (Math.abs(I) > 0) {
+          virtualCur.push({ p0: p1c, p1: p2c, current: I, radius: wireRadius * 0.35 });
+        }
         parts.push({ kind: 'tube', pts: [A, p1c], radius: wireRadius, mat: 'copper' });
         parts.push({ kind: 'tube', pts: [p2c, B], radius: wireRadius, mat: 'copper' });
         // 极板：每一块用若干条平行线电荷近似（这样才能解出边缘效应）
@@ -568,6 +574,8 @@ export function buildScene(circuit, solution, opts = {}) {
   const solver = new FieldSolver(physicsRadius * M, wireRadius * M, { model: kernel });
   for (const s of segs) solver.add(s.p0, s.p1, s.pot, s.cur, s.eAx, s.radius);
   solver.build().solve();
+  // 位移电流段：在电荷解算完之后追加，λ=0 所以不影响 E，只影响 B
+  for (const v of virtualCur) solver.addCurrentSegment(v.p0, v.p1, v.current, v.radius * M);
 
   // 场景包络，供相机取景（注意：segments 是米制，这里换回世界单位）
   const bmin = [Infinity, Infinity, Infinity], bmax = [-Infinity, -Infinity, -Infinity];

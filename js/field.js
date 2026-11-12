@@ -308,6 +308,36 @@ export class FieldSolver {
     return this;
   }
 
+  /**
+   * 追加一段「只带电流」的线段：参与 B 场叠加，但不参与电荷求解（λ=0）。
+   * 用来表示电容极板之间的位移电流，保证 B 场连续。
+   * 必须在 solve() 之后调用。
+   */
+  addCurrentSegment(p0, p1, current, radius) {
+    const n = this.n;
+    if (!this.virt) this.virt = new Uint8Array(0);
+    const L = Math.hypot(p1[0] - p0[0], p1[1] - p0[1], p1[2] - p0[2]);
+    if (!(L > 1e-12)) return;
+    // 就地扩容
+    const P0 = new Float64Array((n + 1) * 3), P1 = new Float64Array((n + 1) * 3);
+    P0.set(this.p0); P1.set(this.p1);
+    P0.set(p0, n * 3); P1.set(p1, n * 3);
+    this.p0 = P0; this.p1 = P1;
+    const len = new Float64Array(n + 1); len.set(this.len); len[n] = L; this.len = len;
+    const cur = new Float64Array(n + 1); cur.set(this.cur); cur[n] = current; this.cur = cur;
+    const lam = new Float64Array(n + 1); lam.set(this.lam); lam[n] = 0; this.lam = lam;
+    const eAx = new Float64Array(n + 1); eAx.set(this.eAx); this.eAx = eAx;
+    const rad = new Float64Array(n + 1); rad.set(this.rad); rad[n] = radius; this.rad = rad;
+    const mid = new Float64Array((n + 1) * 3); mid.set(this.mid);
+    mid[n * 3] = 0.5 * (p0[0] + p1[0]);
+    mid[n * 3 + 1] = 0.5 * (p0[1] + p1[1]);
+    mid[n * 3 + 2] = 0.5 * (p0[2] + p1[2]);
+    this.mid = mid;
+    const virt = new Uint8Array(n + 1);
+    virt.set(this.virt); virt[n] = 1; this.virt = virt;
+    this.n = n + 1;
+  }
+
   /** 带部分主元的高斯消元，就地求解 A·X = B（B 有 m 列，位于第 n..n+m-1 列） */
   _gauss(A, n, m) {
     const w = n + m;
@@ -369,10 +399,11 @@ export class FieldSolver {
     if (box && (px < box[0] || px > box[3] || py < box[1] || py > box[4] || pz < box[2] || pz > box[5])) {
       return false;
     }
-    const { p0, p1, len, cur, eAx, n, rad } = this;
+    const { p0, p1, len, cur, eAx, n, rad, virt } = this;
     for (let i = 0; i < n; i++) {
       const L = len[i];
       if (L < 1e-12) continue;
+      if (virt && virt[i]) continue;   // 位移电流段不是实心导体
       const a = rad[i];
       const i3 = 3 * i;
       const ux = (p1[i3] - p0[i3]) / L, uy = (p1[i3 + 1] - p0[i3 + 1]) / L, uz = (p1[i3 + 2] - p0[i3 + 2]) / L;

@@ -225,7 +225,7 @@ export class FieldViz {
     for (let i = 0; i < mags.length; i++) {
       if (mags[i] >= loCut && mags[i] <= hiCut) keep.push(i);
     }
-    const geo = makeArrowGeometry();
+    const geo = makeArrowGeometry(o.arrowTail ?? 1);
     const mat = new THREE.MeshBasicMaterial({ vertexColors: false, transparent: true, opacity: o.opacity ?? 0.9 });
     const mesh = new THREE.InstancedMesh(geo, mat, keep.length);
     mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
@@ -347,7 +347,7 @@ export class FieldViz {
     const l1 = Math.log10(Math.max(mags[mags.length - 1], 1e-29));
     const span = Math.max(l1 - l0, 1e-6);
 
-    const geo = makeArrowGeometry();
+    const geo = makeArrowGeometry(o.arrowTail ?? 1);
     // 洋红是「导体内部」的标识色，不跟外面那套色标走：
     // 内部场比外面弱几个数量级（E 约 0.1 V/m vs 外部上千），
     // 套外部色标会全部落到最暗端、等于看不见。
@@ -949,14 +949,22 @@ export class FieldViz {
 }
 
 /* ---------------- 几何/积分 ---------------- */
-function makeArrowGeometry() {
-  // 细长箭头：杆和头的半径都压小，远景才不会糊成一片
-  const shaft = new THREE.CylinderGeometry(0.022, 0.022, 0.62, 6, 1, false);
-  shaft.translate(0, 0.31, 0);
-  const head = new THREE.ConeGeometry(0.058, 0.38, 8);
-  head.translate(0, 0.62 + 0.19, 0);
+/**
+ * 箭头几何。tail 是「尾部（杆）长度」系数：
+ *   头的大小固定，杆按 tail 伸缩 → 整体变长，但箭头尖端的分辨率不变。
+ * 几何总高度 = 0.62*tail + 0.38，最后平移到原点居中。
+ */
+function makeArrowGeometry(tail = 1) {
+  const t = Math.max(0.15, Math.min(3, tail));
+  const shaftLen = 0.62 * t;
+  const headLen = 0.38;
+  const total = shaftLen + headLen;
+  const shaft = new THREE.CylinderGeometry(0.022, 0.022, shaftLen, 6, 1, false);
+  shaft.translate(0, shaftLen / 2, 0);
+  const head = new THREE.ConeGeometry(0.058, headLen, 8);
+  head.translate(0, shaftLen + headLen / 2, 0);
   const g = mergeGeos([shaft, head]);
-  g.translate(0, -0.5, 0);
+  g.translate(0, -total / 2, 0);
   return g;
 }
 

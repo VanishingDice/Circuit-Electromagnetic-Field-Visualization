@@ -90,7 +90,8 @@ console.log('== 坡印廷矢量方向（关键物理）==');
 
 console.log('== 每段导体半径（场线不该穿进元件）==');
 {
-  const rad = solver.rad;
+  // 位移电流段是虚拟的，不算实心导体，排除掉
+  const rad = [...solver.rad].filter((_, i) => !(solver.virt && solver.virt[i]));
   const maxR = Math.max(...rad);
   const minR = Math.min(...rad);
   console.log(`  半径范围 ${(minR * 1000).toFixed(2)} … ${(maxR * 1000).toFixed(2)} mm`);

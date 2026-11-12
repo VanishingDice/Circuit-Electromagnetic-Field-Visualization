@@ -40,6 +40,8 @@ const state = {
   insideMap: false,    // 内部箭头是否用外侧同款色标
   kernel: 'wire',      // 场求解核：wire=细线(快) / band=圆柱带面元(准)
   arrowScale: 1,       // 箭头大小全局系数
+
+  arrowTail: 1,        // 箭头尾部（杆）长度系数
   timeOn: false,       // 时域模式
   boxLock: { x: false, y: false, z: false },   // 锁定后拖动截取框不会改这一轴
   sliceLock: { x: false, y: false, z: false }, // 截面中心的锁
@@ -173,6 +175,8 @@ function updatePane() {
     interior: state.interior,
     insideMap: state.insideMap,
     arrowScale: state.arrowScale,
+
+    arrowTail: state.arrowTail,
     opacity: state.opacity,
     colorByPotential: state.colorByPot,
     sliceAxis: state.sliceAxis,
@@ -205,6 +209,8 @@ function updateViz() {
     interior: state.interior,
     insideMap: state.insideMap,
     arrowScale: state.arrowScale,
+
+    arrowTail: state.arrowTail,
     opacity: state.opacity,
     sliceAxis: state.sliceAxis,
     slicePos: state.slicePos,
@@ -488,6 +494,17 @@ $('show-inside')?.addEventListener('change', (e) => {
 });
 if ($('show-inside')) $('show-inside').checked = state.interior;
 if ($('inside-map')) $('inside-map').checked = state.insideMap;
+$('arrow-tail')?.addEventListener('input', (e) => {
+  state.arrowTail = +e.target.value / 100;
+  $('arrow-tail-label').textContent = `箭头尾部 ×${state.arrowTail.toFixed(2)}`;
+  updateViz();
+  updatePane();
+});
+if ($('arrow-tail')) {
+  $('arrow-tail').value = String(Math.round(state.arrowTail * 100));
+  $('arrow-tail-label').textContent = `箭头尾部 ×${state.arrowTail.toFixed(2)}`;
+}
+
 $('kernel-band')?.addEventListener('change', (e) => {
   state.kernel = e.target.checked ? 'band' : 'wire';
   lastCount = -1;              // 强制重新取景
@@ -670,6 +687,8 @@ const SLIDER_FMT = {
   'opacity':      (v) => `不透明度 ${Math.round(v)}%`,
   'wire-radius':  (v) => `导线半径 ${(v / 100).toFixed(2)} mm`,
   'arrow-size':   (v) => `箭头大小 ×${(v / 100).toFixed(2)}`,
+
+  'arrow-tail':   (v) => `箭头尾部 ×${(v / 100).toFixed(2)}`,
   'slice-pos':    (v) => `截面位置 ${(v / 100).toFixed(2)} 格`,
   'sp-density':   (v) => `截取空间密度 ${Math.round(v)}`,
   'sp-scale':     (v) => `整体缩放 ${(v / 10).toFixed(1)} 格`,
@@ -845,7 +864,8 @@ const qs = new URLSearchParams(location.search);
   }
   if (qs.get('seeds') === 'uniform') viz.seedMode = 'uniform';
   if (qs.get('dbg') === '1') state.debugStats = true;
-  if (qs.get('arrow')) state.arrowScale = Math.max(0.3, Math.min(2.5, +qs.get('arrow') / 100));
+  if (qs.get('arrow')) state.arrowScale = Math.max(0.3, Math.min(2.5, +qs.get('arrow') / 100));
+  if (qs.get('tail')) state.arrowTail = Math.max(0.2, Math.min(3, +qs.get('tail') / 100));
   if (qs.get('insidemap') === '1') state.insideMap = true;
   if (qs.get('kernel') === 'band') state.kernel = 'band';
   if (qs.get('time') === '1') state.timeOn = true;
