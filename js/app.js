@@ -144,6 +144,7 @@ function rebuild() {
   } catch (err) {
     console.error(err);
     $('stats').innerHTML = `<b style="color:#e0645a">求解失败</b><br>${String(err.message).slice(0, 60)}`;
+    editor.setSolution(null);   // 求解失败时不能让旧解继续画端点
   } finally {
     rebuilding = false;
     if (pending) { pending = false; setTimeout(rebuild, 0); }
@@ -1021,6 +1022,21 @@ function runSelfTest() {
       ok(false, '锁定轴测试抛错', String(err.message).slice(0, 80));
       state.boxLock.x = false;
       slicePane.setLocks(state.boxLock);
+    }
+
+    // 9.583 删除元件后，端点必须从「解」里消失（画布上的端点靠 solution.nodeV 画）
+    try {
+      const e0 = { id: newId(), type: 'wire', a: [0, 0], b: [0, 1], value: 0 };
+      circuit.elements.push(e0);
+      rebuild();
+      ok('0,1' in solution.nodeV, '新增导线的端点出现在解里');
+      editor._remove(e0);
+      ok(!editor.solution || !editor.solution.nodeV['0,1'],
+        '删除后编辑器不再持有含该端点的解（端点不会残留）');
+      rebuild();
+      ok(!('0,1' in solution.nodeV), '重建后端点彻底消失');
+    } catch (err) {
+      ok(false, '删除节点测试抛错', String(err.message).slice(0, 80));
     }
 
     // 9.584 时域：按钮可点、能单步推进

@@ -126,6 +126,7 @@ export class Editor2D {
   _place(a, b) {
     const type = this.tool;
     if (!TYPES[type]) return;
+    this.solution = null;   // 结构性改动：先丢掉旧解，端点/电位别残留在画面上
     // 端点落在别的线段内部 → 打断
     splitAt(this.circuit, a);
     splitAt(this.circuit, b);
@@ -144,6 +145,10 @@ export class Editor2D {
   _remove(el) {
     this.circuit.elements = this.circuit.elements.filter((x) => x !== el);
     if (this.selected === el) { this.selected = null; this.onSelect(null); }
+    // 关键：清掉旧解。端点圆点是根据 solution.nodeV 画的，
+    // 重建是异步的（setTimeout 0），不清掉的话旧端点会多留一帧甚至一直留着
+    // （求解失败时 setSolution 不会被调用，就永久残留了）。
+    this.solution = null;
     this.onChange();
     this.draw();
   }
