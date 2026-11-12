@@ -1023,6 +1023,24 @@ function runSelfTest() {
       slicePane.setLocks(state.boxLock);
     }
 
+    // 9.584 时域：按钮可点、能单步推进
+    try {
+      $('btn-time').click();
+      ok(state.timeOn === true, '时域按钮可点');
+      ok(!$('timewin').classList.contains('hidden'), '时域面板可见');
+      const i0 = tIndex;
+      tStep();
+      ok(tIndex === i0 + 1, '时域可以单步推进');
+      $('tm-play').click();
+      ok(!!tTimer, '播放按钮可点');
+      tPause();
+      ok(!tTimer, '暂停后定时器已清除');
+      $('btn-time').click();
+      ok(state.timeOn === false && $('timewin').classList.contains('hidden'), '退出时域后面板隐藏');
+    } catch (err) {
+      ok(false, '时域测试抛错', String(err.message).slice(0, 80));
+    }
+
     // 9.585 截面中心锁
     try {
       const cx0 = slice.state.cx;

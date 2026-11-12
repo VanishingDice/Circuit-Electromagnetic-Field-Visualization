@@ -724,12 +724,18 @@ export class FieldViz {
 
       const hi = Math.max(radW * 1.4, Math.min(Math.min(rMax, radW * 12), dEdge * 0.8));
       const lo = Math.min(hi * 0.92, Math.max(radW * 1.35, sep * 0.55));
+      // 半径跨度不够就别硬塞三圈：两圈挨太近，看上去就是「双线重叠」。
+      // 跨度比 ≥2.2 才放 3 圈，≥1.6 放 2 圈，否则 1 圈。
+      const spanRatio = hi / lo;
+      const nRadii = spanRatio >= 2.2 ? N_RADII : (spanRatio >= 1.6 ? 2 : 1);
 
       // 站点之间交错一下起始方位，线不至于全从一个方向「长出来」
       const th = a * GOLDEN_ANGLE;
-      for (let q = 0; q < N_RADII; q++) {
-        const f = N_RADII === 1 ? 0.5 : q / (N_RADII - 1);
-        const r = lo + (hi - lo) * f;
+      for (let q = 0; q < nRadii; q++) {
+        // 几何间距（按比例递增），比线性间距看起来更均匀
+        const r = nRadii === 1
+          ? Math.sqrt(lo * hi)
+          : lo * Math.pow(hi / lo, q / (nRadii - 1));
         const ca = Math.cos(th) * r, sa = Math.sin(th) * r;
         const bx = base[0] * M2W, by = base[1] * M2W, bz = base[2] * M2W;
         const p = [

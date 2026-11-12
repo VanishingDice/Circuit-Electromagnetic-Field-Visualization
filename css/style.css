@@ -502,6 +502,8 @@ input[type=range]::-webkit-slider-thumb {
 .locked-wrap input[type="range"]:disabled { opacity: 0.35; }
 
 .timewin {
+  /* .overlay 默认 pointer-events:none，这里必须恢复，否则按钮点不动 */
+  pointer-events: auto;
   left: 50%;
   bottom: 92px;
   transform: translateX(-50%);
@@ -525,6 +527,7 @@ input[type=range]::-webkit-slider-thumb {
   font-variant-numeric: tabular-nums;
 }
 .timewin input[type="range"] { width: 100%; }
+.timewin.hidden { display: none; }
 
 .sw-tip {
   margin: 4px 0 2px;
