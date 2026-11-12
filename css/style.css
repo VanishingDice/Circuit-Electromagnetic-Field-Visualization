@@ -501,6 +501,25 @@ input[type=range]::-webkit-slider-thumb {
 }
 .locked-wrap input[type="range"]:disabled { opacity: 0.35; }
 
+/* 滑杆悬浮提示：显示当前参数值 */
+.slider-tip {
+  position: fixed;
+  z-index: 9997;
+  padding: 3px 8px;
+  border-radius: 6px;
+  background: rgba(10, 16, 24, 0.95);
+  border: 1px solid rgba(126, 224, 255, 0.35);
+  color: #d6ecff;
+  font-size: 11.5px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.12s;
+  transform: translate(-50%, -130%);
+}
+.slider-tip.on { opacity: 1; }
+
 .timewin {
   /* .overlay 默认 pointer-events:none，这里必须恢复，否则按钮点不动 */
   pointer-events: auto;

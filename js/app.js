@@ -259,6 +259,11 @@ function renderInspector(el) {
       renderInspector(el);
     });
     const range = $('insp-range');
+    if (range) {
+      range.dataset.tipName = info.label;
+      range.dataset.tipUnit = ' ' + info.unit;
+      attachSliderTip(range);
+    }
     range.addEventListener('input', () => {
       const v = sliderToValue(+range.value, info);
       el.value = roundNice(v);
@@ -483,6 +488,11 @@ $('show-inside')?.addEventListener('change', (e) => {
 });
 if ($('show-inside')) $('show-inside').checked = state.interior;
 if ($('inside-map')) $('inside-map').checked = state.insideMap;
+$('kernel-band')?.addEventListener('change', (e) => {
+  state.kernel = e.target.checked ? 'band' : 'wire';
+  lastCount = -1;              // 强制重新取景
+  rebuild();
+});
 if ($('kernel-band')) $('kernel-band').checked = state.kernel === 'band';
 if ($('arrow-size')) $('arrow-size').value = String(Math.round(state.arrowScale * 100));
 if (state.interior) applyInterior();
@@ -652,25 +662,122 @@ window.addEventListener('keydown', (e) => {
   }
 });
 
+/* ---------------- 滑杆悬浮提示：显示当前参数 ---------------- */
+
+/** 按 id 给出「名字 + 当前值带单位」 */
+const SLIDER_FMT = {
+  'density':      (v) => `流线/箭头密度 ${Math.round(v)}`,
+  'opacity':      (v) => `不透明度 ${Math.round(v)}%`,
+  'wire-radius':  (v) => `导线半径 ${(v / 100).toFixed(2)} mm`,
+  'arrow-size':   (v) => `箭头大小 ×${(v / 100).toFixed(2)}`,
+  'slice-pos':    (v) => `截面位置 ${(v / 100).toFixed(2)} 格`,
+  'sp-density':   (v) => `截取空间密度 ${Math.round(v)}`,
+  'sp-scale':     (v) => `整体缩放 ${(v / 10).toFixed(1)} 格`,
+  'sp-cx':        (v) => `中心 X ${(v / 10).toFixed(2)} 格`,
+  'sp-cy':        (v) => `中心 Y ${(v / 10).toFixed(2)} 格`,
+  'sp-cz':        (v) => `中心 Z ${(v / 10).toFixed(2)} 格`,
+  'sp-sx':        (v) => `长 X ${(v / 10).toFixed(1)} 格`,
+  'sp-sy':        (v) => `高 Y ${(v / 10).toFixed(1)} 格`,
+  'sp-sz':        (v) => `宽 Z ${(v / 10).toFixed(1)} 格`,
+  'sw-cx':        (v) => `截面中心 X ${(v / 10).toFixed(2)} 格`,
+  'sw-cy':        (v) => `截面中心 Y ${(v / 10).toFixed(2)} 格`,
+  'sw-cz':        (v) => `截面中心 Z ${(v / 10).toFixed(2)} 格`,
+  'sw-yaw':       (v) => `偏航 ${Math.round(v)}°`,
+  'sw-pitch':     (v) => `俯仰 ${Math.round(v)}°`,
+  'sw-size':      (v) => `截面尺寸 ${(v / 10).toFixed(1)} 格`,
+  'sw-dens':      (v) => `箭头密度 ${Math.round(v)}`,
+  'tm-slider':    (v) => `时间 ${fmtTime(+v * T_DT)}`,
+};
+
+let tipEl = null;
+
+function showSliderTip(el, x, y) {
+  if (!tipEl) {
+    tipEl = document.createElement('div');
+    tipEl.className = 'slider-tip';
+    document.body.appendChild(tipEl);
+  }
+  let text;
+  const f = SLIDER_FMT[el.id];
+  if (f) text = f(+el.value);
+  else if (el.dataset.tipName) text = `${el.dataset.tipName} ${el.value}${el.dataset.tipUnit || ''}`;
+  else {
+    const lab = el.closest('label')?.querySelector('span');
+    text = `${lab ? lab.textContent.trim() + ' ' : ''}${el.value}`;
+  }
+  tipEl.textContent = text;
+  tipEl.style.left = `${x}px`;
+  tipEl.style.top = `${y}px`;
+  tipEl.classList.add('on');
+}
+
+function hideSliderTip() {
+  if (tipEl) tipEl.classList.remove('on');
+}
+
+/** 给一个 range 挂上提示（可重复调用） */
+export function attachSliderTip(el) {
+  if (!el || el.__tipBound) return;
+  el.__tipBound = true;
+  let lx = 0, ly = 0;
+  el.addEventListener('pointerenter', (e) => { lx = e.clientX; ly = e.clientY; showSliderTip(el, lx, ly); });
+  el.addEventListener('pointermove', (e) => {
+    lx = e.clientX; ly = e.clientY;
+    if (tipEl && tipEl.classList.contains('on')) showSliderTip(el, lx, ly);
+  });
+  el.addEventListener('pointerleave', hideSliderTip);
+  el.addEventListener('pointerdown', () => showSliderTip(el, lx, ly));
+  el.addEventListener('input', () => {
+    if (tipEl && tipEl.classList.contains('on')) showSliderTip(el, lx, ly);
+  });
+}
+
+/** 给页面上所有 range 挂提示 */
+function attachAllSliderTips() {
+  document.querySelectorAll('input[type="range"]').forEach((el) => attachSliderTip(el));
+}
+
 /* ---------------- 时域分析 ---------------- */
-const T_DT = 20e-6;        // 步长 20 µs
-const T_MAX = 400;         // 时间轴 400 步 = 8 ms
+const T_DT = 2e-6;         // 步长 2 µs
+const T_MAX = 500;         // 时间轴 500 步 = 1 ms（默认回路的 L/R 约 0.1 ms）
 let tState = null;
 let tSol = null;
 let tIndex = 0;
 let tTimer = null;
 
+/** 自适应时间格式：< 1 ms 用 µs，否则 ms */
+function fmtTime(sec) {
+  if (sec < 1e-3) return `${(sec * 1e6).toFixed(1)} µs`;
+  return `${(sec * 1e3).toFixed(3)} ms`;
+}
+
 function tSyncUI() {
-  if ($('tm-label')) $('tm-label').textContent = `t = ${(tIndex * T_DT * 1000).toFixed(2)} ms`;
+  const t = tIndex * T_DT;
+  if ($('tm-label')) $('tm-label').textContent = `t = ${fmtTime(t)}`;
   if ($('tm-slider')) $('tm-slider').value = String(tIndex);
 }
 
-/** 从 0 重新积分到第 k 步（每步只是一个很小的线性方程组，很快） */
+/** t=0⁻ 的静止解：全部电位与电流为 0（电容未充电、电感无电流） */
+function zeroSolution() {
+  const nodeV = {}, elCurrent = {};
+  for (const el of circuit.elements) {
+    nodeV[el.a.join(',')] = 0;
+    nodeV[el.b.join(',')] = 0;
+    elCurrent[el.id] = 0;
+  }
+  return { nodeV, elCurrent };
+}
+
+/** 从 0 重新积分到第 k 步；k=0 表示 t=0（静止初态） */
 function tGoto(k) {
   tIndex = Math.max(0, Math.min(T_MAX, k | 0));
   tState = createTransient(circuit);
-  tSol = solveTransient(circuit, tState, T_DT);
-  for (let i = 0; i < tIndex; i++) tSol = solveTransient(circuit, tState, T_DT);
+  if (tIndex === 0) {
+    tSol = zeroSolution();
+  } else {
+    tSol = solveTransient(circuit, tState, T_DT);
+    for (let i = 1; i < tIndex; i++) tSol = solveTransient(circuit, tState, T_DT);
+  }
   lastCount = circuit.elements.length;
   rebuild();
   tSyncUI();
@@ -774,6 +881,8 @@ scene3d.setGhost(state.interior);
 slicePane.scene.setGhost(state.interior);
 rebuild();
 if (sliceMode3D) slice.setMode3D(true);
+
+attachAllSliderTips();
 
 if (state.timeOn) {
   $('btn-time').classList.add('active');
@@ -1042,10 +1151,40 @@ function runSelfTest() {
       ok(false, '删除节点测试抛错', String(err.message).slice(0, 80));
     }
 
+    // 9.5835 高精度开关：能切换且真的换了求解核
+    try {
+      const n0 = sceneData.solver.n;
+      $('kernel-band').click();
+      ok(state.kernel === 'band', '高精度开关可切换到 band');
+      ok(sceneData.solver.model === 'band', '求解器确实用了 band 核');
+      ok(sceneData.solver.n !== n0, '切换后段数变化（显示半径=计算半径）', `${n0}→${sceneData.solver.n}`);
+      $('kernel-band').click();
+      ok(state.kernel === 'wire' && sceneData.solver.model === 'wire', '可以切回 wire');
+    } catch (err) {
+      ok(false, '高精度开关测试抛错', String(err.message).slice(0, 80));
+    }
+
+    // 9.5836 滑杆悬浮提示：所有 range 都挂上了
+    try {
+      const ranges = [...document.querySelectorAll('input[type="range"]')];
+      const bound = ranges.filter((r) => r.__tipBound).length;
+      ok(ranges.length > 0 && bound === ranges.length, `全部滑杆都挂了悬浮提示 (${bound}/${ranges.length})`);
+      ok(typeof SLIDER_FMT['density'] === 'function', '密度滑杆有格式化器');
+    } catch (err) {
+      ok(false, '滑杆提示测试抛错', String(err.message).slice(0, 80));
+    }
+
     // 9.584 时域：按钮可点、能单步推进
     try {
       $('btn-time').click();
       ok(state.timeOn === true, '时域按钮可点');
+      // t=0 必须是静止初态：所有电位与电流为 0
+      tGoto(0);
+      const vMax = Math.max(...Object.values(tSol.nodeV).map(Math.abs));
+      ok(vMax === 0, 't=0 是静止初态（全部电位为 0）', `max|V|=${vMax}`);
+      tGoto(10);
+      const vMax10 = Math.max(...Object.values(tSol.nodeV).map(Math.abs));
+      ok(vMax10 > 1, 't>0 后开始建立电位', `max|V|=${vMax10.toFixed(2)}`);
       ok(!$('timewin').classList.contains('hidden'), '时域面板可见');
       const i0 = tIndex;
       tStep();
