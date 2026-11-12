@@ -87,6 +87,7 @@
         <div class="sp-actions">
           <label class="switch tiny" title="只影响主视图里的线框，不影响下面这块的裁剪">
             <input type="checkbox" id="sp-showbox" checked /><span>显示截取框</span>
+          <label class="mini-check" title="显示六个面上可拖动缩放的方块"><input type="checkbox" id="sp-handles" /><span>面手柄</span></label>
           </label>
           <button id="sp-snap" class="ghost tiny" title="把体块吸到发热最大的那根导线上">吸附导线</button>
           <button id="sp-fit" class="ghost tiny" title="把相机重新对准体块">复位视角</button>
@@ -168,6 +169,11 @@
         <div class="tm-row">
           <button id="tm-play" class="ghost tiny">播放</button>
           <button id="tm-reset" class="ghost tiny">重置</button>
+          <select id="tm-scale" class="tm-select" title="时间步长">
+            <option value="fast">细步长</option>
+            <option value="normal" selected>标准</option>
+            <option value="slow">粗步长</option>
+          </select>
           <span id="tm-label" class="tm-label">t = 0.00 ms</span>
         </div>
         <input type="range" id="tm-slider" min="0" max="500" value="0" />

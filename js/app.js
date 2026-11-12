@@ -43,7 +43,7 @@ const state = {
 
   arrowTail: 1,        // 箭头尾部（杆）长度系数
   timeOn: false,       // 时域模式
-  boxLock: { x: false, y: false, z: false },   // 锁定后拖动截取框不会改这一轴
+  boxLock: { x: false, y: false, z: false },    // 锁定后拖动截取框不会改这一轴；Y 默认锁
   sliceLock: { x: false, y: false, z: false }, // 截面中心的锁
   autoRotate: false,
   wireRadius: 0.05,     // 世界单位（1 单位 = 1 cm）
@@ -426,6 +426,12 @@ const LOCK_SLIDER = { x: 'sp-cx', y: 'sp-cy', z: 'sp-cz' };
 for (const ax of ['x', 'y', 'z']) {
   const btn = $('sp-lock-' + ax);
   if (!btn) continue;
+  // 初始状态同步（Y 默认锁定）
+  if (state.boxLock[ax]) {
+    btn.classList.add('on');
+    const r0 = $(LOCK_SLIDER[ax]);
+    if (r0) r0.disabled = true;
+  }
   btn.addEventListener('click', (e) => {
     e.preventDefault();
     e.stopPropagation();
@@ -461,6 +467,14 @@ $('sp-snap')?.addEventListener('click', () => {
   boxGizmo.setBox(slicePane.worldBox);
   syncSpInputs();
 });
+$('sp-handles')?.addEventListener('change', (e) => {
+
+  boxGizmo.setHandlesVisible(e.target.checked);
+
+});
+
+$('sp-handles') && ($('sp-handles').checked = false);
+
 $('sp-showbox')?.addEventListener('change', (e) => boxGizmo.setVisible(e.target.checked));
 
 const applyInterior = () => {
@@ -609,6 +623,12 @@ $('btn-time').addEventListener('click', () => {
 $('tm-play')?.addEventListener('click', () => {
   if (tTimer) tPause(); else tPlay();
 });
+$('tm-scale')?.addEventListener('change', (e) => {
+  T_DT = T_SCALE[e.target.value] ?? T_SCALE.normal;
+  tPause();
+  tGoto(0);
+});
+
 $('tm-reset')?.addEventListener('click', () => tReset());
 $('tm-slider')?.addEventListener('input', (e) => {
   tPause();
@@ -757,8 +777,10 @@ function attachAllSliderTips() {
 }
 
 /* ---------------- 时域分析 ---------------- */
-const T_DT = 2e-6;         // 步长 2 µs
-const T_MAX = 500;         // 时间轴 500 步 = 1 ms（默认回路的 L/R 约 0.1 ms）
+// 时间步长可调（µs）；总时长 = T_DT × T_MAX
+const T_SCALE = { slow: 5e-6, normal: 2e-6, fast: 0.5e-6 };
+let T_DT = T_SCALE.normal;
+const T_MAX = 500;
 let tState = null;
 let tSol = null;
 let tIndex = 0;
@@ -864,7 +886,8 @@ const qs = new URLSearchParams(location.search);
   }
   if (qs.get('seeds') === 'uniform') viz.seedMode = 'uniform';
   if (qs.get('dbg') === '1') state.debugStats = true;
-  if (qs.get('arrow')) state.arrowScale = Math.max(0.3, Math.min(2.5, +qs.get('arrow') / 100));
+  if (qs.get('arrow')) state.arrowScale = Math.max(0.3, Math.min(2.5, +qs.get('arrow') / 100));
+
   if (qs.get('tail')) state.arrowTail = Math.max(0.2, Math.min(3, +qs.get('tail') / 100));
   if (qs.get('insidemap') === '1') state.insideMap = true;
   if (qs.get('kernel') === 'band') state.kernel = 'band';
@@ -1100,8 +1123,10 @@ function runSelfTest() {
       ok(false, '相机同步平移测试抛错', String(err.message).slice(0, 80));
     }
 
-    // 9.57 吸附导线
+    // 9.57 吸附导线（Y 默认锁定会阻止盒子在 Y 上对齐，测试里先解锁）
     try {
+      state.boxLock.y = false;
+      slicePane.setLocks(state.boxLock);
       slicePane.snapToWire();
       boxGizmo.setBox(slicePane.worldBox);
       syncSpInputs();
@@ -1309,9 +1334,20 @@ function runSelfTest() {
       slice.show(true);
       slice.state.cx = 0; slice.state.cy = 0; slice.state.cz = 0;
       slice.update();
+      // 相机此时可能已经移到别处（前面的测试改过视角）：直接对准原点。
+      // 无头环境下画布可能还没尺寸（aspect=NaN → 投影出 Infinity），先兜个底
+      const rw = scene3d.renderer.domElement.clientWidth;
+      if (!(rw > 0)) scene3d.renderer.setSize(800, 600, false);
+      scene3d.camera.aspect = (scene3d.renderer.domElement.width || 800) / (scene3d.renderer.domElement.height || 600);
+      scene3d.camera.updateProjectionMatrix();
+      scene3d.controls.target.set(0, 0, 0);
+      scene3d.camera.position.set(3.2, 2.8, 3.6);
+      scene3d.camera.lookAt(0, 0, 0);
+      scene3d.camera.updateMatrixWorld();
       scene3d.camera.updateMatrixWorld();
       const p = slice.projectedCenter();
       if (!p.onScreen) {
+        const cc = slice.scene3d.camera;
         ok(false, '截面中心不在屏幕上（无法测交互）');
       } else {
         const target = slice.scene3d.renderer.domElement;

@@ -494,19 +494,38 @@ export function buildScene(circuit, solution, opts = {}) {
         break;
       }
       case 'battery': {
-        // 和电容一样是两块相对的薄板（电池的两个电极），中间用细本体连起来
-        addPath([A, B], Va, Vb);
+        // 电池 = 两块电极板 + 中间的间隙，结构和电容一样：
+        // 外部电场由两块**电极板上的电荷**决定（所以看起来像电容的场），
+        // 间隙里的轴向场单独补（E 从 + 极指向 − 极，与电流反向 —— 这正是「源」的特征）。
         const mid = V3.mul(V3.add(A, B), 0.5);
         const half = BATTERY_GAP / 2;
         const negC = V3.add(mid, V3.mul(axis, -half));
         const posC = V3.add(mid, V3.mul(axis, half));
+        // 引线等电位（电位跳变发生在两块电极板之间）
+        addPath([A, negC], Va, Va, { current: I });
+        addPath([posC, B], Vb, Vb, { current: I });
+        // 间隙：只带电流和轴向场，不参与电荷求解（不是导体表面）
+        const gapM = Math.max(1e-9, V3.len(V3.sub(posC, negC)) * M);
+        virtualCur.push({
+          p0: negC, p1: posC, current: I, radius: wireRadius * 0.35,
+          eAx: (Va - Vb) / gapM,   // 沿 negC→posC；Va<Vb 时为负，即从 + 指向 −
+        });
+        // 电极板：和电容一样用若干条平行线电荷
+        for (const [pc, pot] of [[negC, Va], [posC, Vb]]) {
+          for (let k = 0; k < PLATE_STRIPS; k++) {
+            const off = (k / (PLATE_STRIPS - 1) - 0.5) * 2 * PLATE_HALF * 0.92;
+            const c0 = V3.add(pc, V3.mul(up, off));
+            const q0 = V3.add(c0, V3.mul(side, -PLATE_HALF));
+            const q1 = V3.add(c0, V3.mul(side, PLATE_HALF));
+            addPath([q0, q1], pot, pot, { current: 0 });
+          }
+        }
         parts.push({ kind: 'tube', pts: [A, negC], radius: wireRadius, mat: 'copper' });
         parts.push({ kind: 'tube', pts: [posC, B], radius: wireRadius, mat: 'copper' });
         // 内部本体（半透明，只作为「这两块板是同一个元件」的提示）
         parts.push({
-          kind: 'tube', pts: [negC, posC], radius: wireRadius * 1.5, mat: 'batteryBody',
+          kind: 'tube', pts: [negC, posC], radius: wireRadius * 1.2, mat: 'batteryBody',
         });
-        // 负电极（暗）与正电极（红）
         parts.push({ kind: 'plate', center: negC, axis, up, side, half: PLATE_HALF * 0.95, mat: 'batteryMinus' });
         parts.push({ kind: 'plate', center: posC, axis, up, side, half: PLATE_HALF * 0.95, mat: 'batteryPlus' });
         parts.push({ kind: 'label', pos: V3.add(mid, V3.mul(up, PLATE_HALF + 0.28)), text: `${fmt(el.value)}V` });
@@ -575,7 +594,10 @@ export function buildScene(circuit, solution, opts = {}) {
   for (const s of segs) solver.add(s.p0, s.p1, s.pot, s.cur, s.eAx, s.radius);
   solver.build().solve();
   // 位移电流段：在电荷解算完之后追加，λ=0 所以不影响 E，只影响 B
-  for (const v of virtualCur) solver.addCurrentSegment(v.p0, v.p1, v.current, v.radius * M);
+  // 注意单位：v.p0/v.p1 是世界单位，求解器要米制
+  for (const v of virtualCur) {
+    solver.addCurrentSegment(V3.mul(v.p0, M), V3.mul(v.p1, M), v.current, v.radius * M, v.eAx || 0);
+  }
 
   // 场景包络，供相机取景（注意：segments 是米制，这里换回世界单位）
   const bmin = [Infinity, Infinity, Infinity], bmax = [-Infinity, -Infinity, -Infinity];

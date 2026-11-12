@@ -313,7 +313,7 @@ export class FieldSolver {
    * 用来表示电容极板之间的位移电流，保证 B 场连续。
    * 必须在 solve() 之后调用。
    */
-  addCurrentSegment(p0, p1, current, radius) {
+  addCurrentSegment(p0, p1, current, radius, eAxial = 0) {
     const n = this.n;
     if (!this.virt) this.virt = new Uint8Array(0);
     const L = Math.hypot(p1[0] - p0[0], p1[1] - p0[1], p1[2] - p0[2]);
@@ -326,7 +326,7 @@ export class FieldSolver {
     const len = new Float64Array(n + 1); len.set(this.len); len[n] = L; this.len = len;
     const cur = new Float64Array(n + 1); cur.set(this.cur); cur[n] = current; this.cur = cur;
     const lam = new Float64Array(n + 1); lam.set(this.lam); lam[n] = 0; this.lam = lam;
-    const eAx = new Float64Array(n + 1); eAx.set(this.eAx); this.eAx = eAx;
+    const eAx = new Float64Array(n + 1); eAx.set(this.eAx); eAx[n] = eAxial; this.eAx = eAx;
     const rad = new Float64Array(n + 1); rad.set(this.rad); rad[n] = radius; this.rad = rad;
     const mid = new Float64Array((n + 1) * 3); mid.set(this.mid);
     mid[n * 3] = 0.5 * (p0[0] + p1[0]);
@@ -403,7 +403,8 @@ export class FieldSolver {
     for (let i = 0; i < n; i++) {
       const L = len[i];
       if (L < 1e-12) continue;
-      if (virt && virt[i]) continue;   // 位移电流段不是实心导体
+      // 位移电流段不是实心导体；但如果它自带轴向场（电池间隙），要参与内部场
+      if (virt && virt[i] && !eAx[i]) continue;
       const a = rad[i];
       const i3 = 3 * i;
       const ux = (p1[i3] - p0[i3]) / L, uy = (p1[i3 + 1] - p0[i3 + 1]) / L, uz = (p1[i3 + 2] - p0[i3 + 2]) / L;

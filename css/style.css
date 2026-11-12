@@ -546,6 +546,14 @@ input[type=range]::-webkit-slider-thumb {
   font-variant-numeric: tabular-nums;
 }
 .timewin input[type="range"] { width: 100%; }
+.tm-select {
+  background: rgba(20, 30, 42, 0.9);
+  color: #cfe4f7;
+  border: 1px solid rgba(126, 224, 255, 0.25);
+  border-radius: 6px;
+  font-size: 11.5px;
+  padding: 2px 4px;
+}
 .timewin.hidden { display: none; }
 
 .sw-tip {

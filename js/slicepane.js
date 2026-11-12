@@ -209,6 +209,7 @@ export class SlicePane {
     if (!solver || !solver.n) return;
     let best = 0, bestP = -1;
     for (let k = 0; k < solver.n; k++) {
+      if (solver.virt && solver.virt[k]) continue;   // 虚拟段不是真实导体
       const p = Math.abs(solver.eAx[k] * solver.cur[k]) * solver.len[k];
       if (p > bestP) { bestP = p; best = k; }
     }

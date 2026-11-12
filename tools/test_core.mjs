@@ -107,6 +107,7 @@ console.log('== 导体内部的场（剖面功能的基础）==');
   // 找电阻上一段（|E∥| 最大的一定是电阻，而不是电池的 -300）
   let best = -1, bestAbs = 0;
   for (let k = 0; k < solver.n; k++) {
+    if (solver.virt && solver.virt[k]) continue;   // 电池间隙是虚拟段
     const a = Math.abs(solver.eAx[k]);
     if (a > bestAbs) { bestAbs = a; best = k; }
   }
@@ -116,19 +117,22 @@ console.log('== 导体内部的场（剖面功能的基础）==');
   console.log(`  内部 E∥ = ${eAx.toFixed(1)} V/m，I·R/L = ${expectE.toFixed(1)} V/m`);
   ok(Math.abs(Math.abs(eAx) / expectE - 1) < 0.02, 'E∥ 与 I·R/L 一致');
 
-  // 在导线内部取一点：B 应 = μ0·I·r/(2πa²)，S 应指向轴心
+  // 在导线内部取一点：B 应 = μ0·I·r/(2πa²)，S 应指向轴心。
+  // 这里必须用「同一个」solver 来找段和取点：solver 是文件开头那份，
+  // 中间有测试改过电路，两者对不上就会取到错位的一段。
   const a = 0.0005;      // 画面导线半径 0.5 mm
-  const sc2 = buildScene(c, sol, { wireRadius: 0.05 });
-  const s2 = sc2.solver;
-  let k2 = -1, bestAbs2 = 0;
+  const cTest = createDefaultCircuit();
+  const s2 = buildScene(cTest, solveCircuit(cTest), { wireRadius: 0.05 }).solver;
+  let best2 = -1, bestAbs2 = 0;
   for (let k = 0; k < s2.n; k++) {
-    const a = Math.abs(s2.eAx[k]);
-    if (a > bestAbs2) { bestAbs2 = a; k2 = k; }
+    if (s2.virt && s2.virt[k]) continue;
+    const v = Math.abs(s2.eAx[k]);
+    if (v > bestAbs2) { bestAbs2 = v; best2 = k; }
   }
-  const i3 = 3 * k2;
+  const i3 = 3 * best2;
   const p0 = [s2.p0[i3], s2.p0[i3 + 1], s2.p0[i3 + 2]];
   const p1 = [s2.p1[i3], s2.p1[i3 + 1], s2.p1[i3 + 2]];
-  const L = s2.len[k2];
+  const L = s2.len[best2];
   const u = [(p1[0] - p0[0]) / L, (p1[1] - p0[1]) / L, (p1[2] - p0[2]) / L];
   const ref = Math.abs(u[1]) < 0.9 ? [0, 1, 0] : [1, 0, 0];
   const e1 = normalize(cross(u, ref));
@@ -138,7 +142,7 @@ console.log('== 导体内部的场（剖面功能的基础）==');
   const E = [0, 0, 0], B = [0, 0, 0];
   const inside = s2.interior(p[0], p[1], p[2], E, B);
   ok(inside, '探针点被判为落在导体内部');
-  const Bexpect = (MU0 * Math.abs(s2.cur[k2]) * r) / (2 * Math.PI * a * a);
+  const Bexpect = (MU0 * Math.abs(s2.cur[best2]) * r) / (2 * Math.PI * a * a);
   const Bgot = Math.hypot(...B);
   console.log(`  内部 B = ${Bgot.toExponential(3)} T，μ0·I·r/(2πa²) = ${Bexpect.toExponential(3)} T`);
   ok(Math.abs(Bgot / Bexpect - 1) < 1e-6, '内部 B 与解析式一致');

@@ -77,6 +77,12 @@ export class BoxGizmo {
     this.pointer = new THREE.Vector2();
   }
 
+  /** 显示/隐藏六个面把手（默认关） */
+  setHandlesVisible(v) {
+    this.handlesVisible = !!v;
+    if (this.handlesGroup) this.handlesGroup.visible = !!v;
+  }
+
   setBox(box) {
     this.box = { min: [...box.min], max: [...box.max] };
     this._layout();
